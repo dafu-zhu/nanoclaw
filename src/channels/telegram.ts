@@ -1,9 +1,142 @@
+import fs from 'fs';
 import https from 'https';
+import path from 'path';
 import { Api, Bot } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
+import { processImage } from '../image.js';
+import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
+
+// --- Bot pool for per-agent identities ---
+
+const poolApis: Api[] = [];
+// Maps "{groupFolder}:{senderName}" → pool index for stable assignment
+const senderBotMap = new Map<string, number>();
+let nextPoolIndex = 0;
+
+export async function initBotPool(tokens: string[]): Promise<void> {
+  for (const token of tokens) {
+    try {
+      const api = new Api(token, {
+        baseFetchConfig: { agent: https.globalAgent, compress: true },
+      } as any);
+      const me = await api.getMe();
+      poolApis.push(api);
+      logger.info(
+        { username: me.username, id: me.id, poolSize: poolApis.length },
+        'Pool bot initialized',
+      );
+    } catch (err) {
+      logger.error({ err }, 'Failed to initialize pool bot');
+    }
+  }
+  if (poolApis.length > 0) {
+    logger.info({ count: poolApis.length }, 'Telegram bot pool ready');
+  }
+}
+
+// Cache of dedicated bot Api instances keyed by token
+const dedicatedBotCache = new Map<string, Api>();
+
+function getDedicatedApi(token: string): Api {
+  let api = dedicatedBotCache.get(token);
+  if (!api) {
+    api = new Api(token);
+    dedicatedBotCache.set(token, api);
+  }
+  return api;
+}
+
+export async function sendPoolMessage(
+  chatId: string,
+  text: string,
+  sender: string,
+  groupFolder: string,
+  fallback: (jid: string, text: string) => Promise<void>,
+  dedicatedToken?: string,
+): Promise<void> {
+  // Preferred: use the group's dedicated bot token directly
+  if (dedicatedToken) {
+    const api = getDedicatedApi(dedicatedToken);
+    const numericId = parseInt(chatId.replace(/^tg:/, ''), 10);
+    const MAX_LENGTH = 4096;
+    try {
+      if (text.length <= MAX_LENGTH) {
+        await sendTelegramMessage(api, numericId, text);
+      } else {
+        for (let i = 0; i < text.length; i += MAX_LENGTH) {
+          await sendTelegramMessage(
+            api,
+            numericId,
+            text.slice(i, i + MAX_LENGTH),
+          );
+        }
+      }
+      logger.info(
+        { chatId, sender, length: text.length },
+        'Pool message sent (dedicated bot)',
+      );
+    } catch (err) {
+      logger.error(
+        { chatId, sender, err },
+        'Failed to send pool message (dedicated bot)',
+      );
+    }
+    return;
+  }
+
+  // Fallback: round-robin pool (no dedicated token configured)
+  if (poolApis.length === 0) {
+    await fallback(chatId, text);
+    return;
+  }
+
+  const key = `${groupFolder}:${sender}`;
+  let idx = senderBotMap.get(key);
+  if (idx === undefined) {
+    idx = nextPoolIndex % poolApis.length;
+    nextPoolIndex++;
+    senderBotMap.set(key, idx);
+    try {
+      await poolApis[idx].setMyName(sender);
+      await new Promise((r) => setTimeout(r, 2000));
+      logger.info(
+        { sender, groupFolder, poolIndex: idx },
+        'Assigned and renamed pool bot',
+      );
+    } catch (err) {
+      logger.warn(
+        { sender, err },
+        'Failed to rename pool bot (sending anyway)',
+      );
+    }
+  }
+
+  const api = poolApis[idx];
+  const numericId = parseInt(chatId.replace(/^tg:/, ''), 10);
+  const MAX_LENGTH = 4096;
+  try {
+    if (text.length <= MAX_LENGTH) {
+      await sendTelegramMessage(api, numericId, text);
+    } else {
+      for (let i = 0; i < text.length; i += MAX_LENGTH) {
+        await sendTelegramMessage(
+          api,
+          numericId,
+          text.slice(i, i + MAX_LENGTH),
+        );
+      }
+    }
+    logger.info(
+      { chatId, sender, poolIndex: idx, length: text.length },
+      'Pool message sent',
+    );
+  } catch (err) {
+    logger.error({ chatId, sender, err }, 'Failed to send pool message');
+  }
+}
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,
@@ -132,9 +265,14 @@ export class TelegramChannel implements Channel {
         isGroup,
       );
 
-      // Only deliver full message for registered groups
+      // Only deliver full message for registered groups or shared group JIDs
       const group = this.opts.registeredGroups()[chatJid];
-      if (!group) {
+      const isSharedGroupJid =
+        !group &&
+        Object.values(this.opts.registeredGroups()).some(
+          (g) => g.sharedGroupJid === chatJid,
+        );
+      if (!group && !isSharedGroupJid) {
         logger.debug(
           { chatJid, chatName },
           'Message from unregistered Telegram chat',
@@ -163,7 +301,12 @@ export class TelegramChannel implements Channel {
     const storeNonText = (ctx: any, placeholder: string) => {
       const chatJid = `tg:${ctx.chat.id}`;
       const group = this.opts.registeredGroups()[chatJid];
-      if (!group) return;
+      const isSharedGroupJid =
+        !group &&
+        Object.values(this.opts.registeredGroups()).some(
+          (g) => g.sharedGroupJid === chatJid,
+        );
+      if (!group && !isSharedGroupJid) return;
 
       const timestamp = new Date(ctx.message.date * 1000).toISOString();
       const senderName =
@@ -193,13 +336,171 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
+    this.bot.on('message:photo', async (ctx) => {
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      const isSharedGroupJid =
+        !group &&
+        Object.values(this.opts.registeredGroups()).some(
+          (g) => g.sharedGroupJid === chatJid,
+        );
+      if (!group && !isSharedGroupJid) return;
+
+      const timestamp = new Date(ctx.message.date * 1000).toISOString();
+      const senderName =
+        ctx.from?.first_name ||
+        ctx.from?.username ||
+        ctx.from?.id?.toString() ||
+        'Unknown';
+      const caption = ctx.message.caption || '';
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
+
+      // Pick the largest photo size
+      const photos = ctx.message.photo;
+      const photo = photos[photos.length - 1];
+      let content = caption ? `[Photo] ${caption}` : '[Photo]';
+
+      try {
+        const file = await ctx.api.getFile(photo.file_id);
+        if (file.file_path) {
+          const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
+          const buffer = await new Promise<Buffer>((resolve, reject) => {
+            https
+              .get(url, (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => resolve(Buffer.concat(chunks)));
+                res.on('error', reject);
+              })
+              .on('error', reject);
+          });
+
+          // Find the group folder to store attachment
+          const targetGroup =
+            group ??
+            Object.values(this.opts.registeredGroups()).find(
+              (g) => g.sharedGroupJid === chatJid,
+            );
+          if (targetGroup) {
+            const groupDir = resolveGroupFolderPath(targetGroup.folder);
+            const processed = await processImage(buffer, groupDir, caption);
+            if (processed) content = processed.content;
+          }
+        }
+      } catch (err) {
+        logger.warn(
+          { chatJid, err },
+          'Failed to download/process Telegram photo',
+        );
+      }
+
+      this.opts.onMessage(chatJid, {
+        id: ctx.message.message_id.toString(),
+        chat_jid: chatJid,
+        sender: ctx.from?.id?.toString() || '',
+        sender_name: senderName,
+        content,
+        timestamp,
+        is_from_me: false,
+      });
+    });
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
     this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
     this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
-    this.bot.on('message:document', (ctx) => {
-      const name = ctx.message.document?.file_name || 'file';
-      storeNonText(ctx, `[Document: ${name}]`);
+    this.bot.on('message:document', async (ctx) => {
+      const doc = ctx.message.document;
+      const name = doc?.file_name || 'file';
+      const isPdf =
+        doc?.mime_type === 'application/pdf' ||
+        (doc?.file_name || '').toLowerCase().endsWith('.pdf');
+
+      if (!isPdf) {
+        storeNonText(ctx, `[Document: ${name}]`);
+        return;
+      }
+
+      // PDF: download to group attachments folder
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      const isSharedGroupJid =
+        !group &&
+        Object.values(this.opts.registeredGroups()).some(
+          (g) => g.sharedGroupJid === chatJid,
+        );
+      if (!group && !isSharedGroupJid) return;
+
+      const timestamp = new Date(ctx.message.date * 1000).toISOString();
+      const senderName =
+        ctx.from?.first_name ||
+        ctx.from?.username ||
+        ctx.from?.id?.toString() ||
+        'Unknown';
+      const caption = ctx.message.caption || '';
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
+
+      let content = caption ? `[PDF: ${name}] ${caption}` : `[PDF: ${name}]`;
+
+      try {
+        const file = await ctx.api.getFile(doc!.file_id);
+        if (file.file_path) {
+          const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
+          const buffer = await new Promise<Buffer>((resolve, reject) => {
+            https
+              .get(url, (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => resolve(Buffer.concat(chunks)));
+                res.on('error', reject);
+              })
+              .on('error', reject);
+          });
+
+          const targetGroup =
+            group ??
+            Object.values(this.opts.registeredGroups()).find(
+              (g) => g.sharedGroupJid === chatJid,
+            );
+          if (targetGroup) {
+            const groupDir = resolveGroupFolderPath(targetGroup.folder);
+            const attachDir = path.join(groupDir, 'attachments');
+            fs.mkdirSync(attachDir, { recursive: true });
+            const filename = `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.pdf`;
+            const filePath = path.join(attachDir, filename);
+            fs.writeFileSync(filePath, buffer);
+            content = caption
+              ? `[PDF: attachments/${filename}] ${caption}`
+              : `[PDF: attachments/${filename}]`;
+          }
+        }
+      } catch (err) {
+        logger.warn({ chatJid, err }, 'Failed to download Telegram PDF');
+      }
+
+      this.opts.onMessage(chatJid, {
+        id: ctx.message.message_id.toString(),
+        chat_jid: chatJid,
+        sender: ctx.from?.id?.toString() || '',
+        sender_name: senderName,
+        content,
+        timestamp,
+        is_from_me: false,
+      });
     });
     this.bot.on('message:sticker', (ctx) => {
       const emoji = ctx.message.sticker?.emoji || '';
