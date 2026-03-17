@@ -19,6 +19,7 @@ const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
 const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const isAdmin = process.env.NANOCLAW_IS_ADMIN === '1';
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -299,24 +300,32 @@ server.tool(
 
 server.tool(
   'register_group',
-  `Register a new chat/group so the agent can respond to messages there. Main group only.
+  `Register a new chat/group so the agent can respond to messages there. Main group and admin agents only.
 
-Use available_groups.json to find the JID for a group. The folder name must be channel-prefixed: "{channel}_{group-name}" (e.g., "whatsapp_family-chat", "telegram_dev-team", "discord_general"). Use lowercase with hyphens for the group name part.`,
+Use available_groups.json to find the JID for a group. The folder name must be channel-prefixed: "{channel}_{group-name}" (e.g., "whatsapp_family-chat", "telegram_dev-team", "discord_general"). Use lowercase with hyphens for the group name part.
+
+For shared-group (Teyvat LLC) agents, use a virtual JID: "virtual:telegram_{folder}" and set agentTrigger and sharedGroupJid.`,
   {
-    jid: z.string().describe('The chat JID (e.g., "120363336345536173@g.us", "tg:-1001234567890", "dc:1234567890123456")'),
+    jid: z.string().describe('The chat JID. For shared-group agents use "virtual:telegram_{folder}" (e.g., "virtual:telegram_tighnari")'),
     name: z.string().describe('Display name for the group'),
-    folder: z.string().describe('Channel-prefixed folder name (e.g., "whatsapp_family-chat", "telegram_dev-team")'),
-    trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
+    folder: z.string().describe('Channel-prefixed folder name (e.g., "telegram_tighnari")'),
+    trigger: z.string().describe('Trigger word (e.g., "@Tighnari")'),
+    agentTrigger: z.string().optional().describe('Character name this agent responds to in a shared group (e.g., "Tighnari"). Required for shared-group agents.'),
+    sharedGroupJid: z.string().optional().describe('Physical JID of the shared group (e.g., "tg:-5244478723"). Required for shared-group agents.'),
+    containerConfig: z.object({
+      poolBotToken: z.string().optional().describe('Dedicated Telegram bot token for this agent\'s identity in the shared group'),
+      timeout: z.number().optional(),
+    }).optional().describe('Container configuration for this agent'),
   },
   async (args) => {
-    if (!isMain) {
+    if (!isMain && !isAdmin) {
       return {
-        content: [{ type: 'text' as const, text: 'Only the main group can register new groups.' }],
+        content: [{ type: 'text' as const, text: 'Only the main group or admin agents can register new groups.' }],
         isError: true,
       };
     }
 
-    const data = {
+    const data: Record<string, unknown> = {
       type: 'register_group',
       jid: args.jid,
       name: args.name,
@@ -324,6 +333,9 @@ Use available_groups.json to find the JID for a group. The folder name must be c
       trigger: args.trigger,
       timestamp: new Date().toISOString(),
     };
+    if (args.agentTrigger) data.agentTrigger = args.agentTrigger;
+    if (args.sharedGroupJid) data.sharedGroupJid = args.sharedGroupJid;
+    if (args.containerConfig) data.containerConfig = args.containerConfig;
 
     writeIpcFile(TASKS_DIR, data);
 

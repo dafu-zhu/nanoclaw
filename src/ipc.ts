@@ -11,7 +11,13 @@ import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
-  sendMessage: (jid: string, text: string) => Promise<void>;
+  sendMessage: (
+    jid: string,
+    text: string,
+    sender?: string,
+    groupFolder?: string,
+    poolBotToken?: string,
+  ) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroups: (force: boolean) => Promise<void>;
@@ -52,14 +58,17 @@ export function startIpcWatcher(deps: IpcDeps): void {
 
     const registeredGroups = deps.registeredGroups();
 
-    // Build folder→isMain lookup from registered groups
+    // Build folder→isMain and folder→isAdmin lookups from registered groups
     const folderIsMain = new Map<string, boolean>();
+    const folderIsAdmin = new Map<string, boolean>();
     for (const group of Object.values(registeredGroups)) {
       if (group.isMain) folderIsMain.set(group.folder, true);
+      if (group.containerConfig?.isAdmin) folderIsAdmin.set(group.folder, true);
     }
 
     for (const sourceGroup of groupFolders) {
       const isMain = folderIsMain.get(sourceGroup) === true;
+      const isAdmin = folderIsAdmin.get(sourceGroup) === true;
       const messagesDir = path.join(ipcBaseDir, sourceGroup, 'messages');
       const tasksDir = path.join(ipcBaseDir, sourceGroup, 'tasks');
 
@@ -74,13 +83,29 @@ export function startIpcWatcher(deps: IpcDeps): void {
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
               if (data.type === 'message' && data.chatJid && data.text) {
-                // Authorization: verify this group can send to this chatJid
+                // Authorization: verify this group can send to this chatJid.
+                // Also allow shared-group agents (virtual JIDs) to send to their sharedGroupJid.
                 const targetGroup = registeredGroups[data.chatJid];
+                const virtualEntry = Object.values(registeredGroups).find(
+                  (g) =>
+                    g.folder === sourceGroup &&
+                    g.sharedGroupJid === data.chatJid,
+                );
                 if (
                   isMain ||
-                  (targetGroup && targetGroup.folder === sourceGroup)
+                  (targetGroup && targetGroup.folder === sourceGroup) ||
+                  virtualEntry
                 ) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                  const poolBotToken =
+                    virtualEntry?.containerConfig?.poolBotToken ??
+                    targetGroup?.containerConfig?.poolBotToken;
+                  await deps.sendMessage(
+                    data.chatJid,
+                    data.text,
+                    data.sender,
+                    data.groupFolder,
+                    poolBotToken,
+                  );
                   logger.info(
                     { chatJid: data.chatJid, sourceGroup },
                     'IPC message sent',
@@ -125,7 +150,7 @@ export function startIpcWatcher(deps: IpcDeps): void {
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
               // Pass source group identity to processTaskIpc for authorization
-              await processTaskIpc(data, sourceGroup, isMain, deps);
+              await processTaskIpc(data, sourceGroup, isMain, isAdmin, deps);
               fs.unlinkSync(filePath);
             } catch (err) {
               logger.error(
@@ -164,16 +189,20 @@ export async function processTaskIpc(
     groupFolder?: string;
     chatJid?: string;
     targetJid?: string;
+    sender?: string;
     // For register_group
     jid?: string;
     name?: string;
     folder?: string;
     trigger?: string;
     requiresTrigger?: boolean;
+    agentTrigger?: string;
+    sharedGroupJid?: string;
     containerConfig?: RegisteredGroup['containerConfig'];
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
+  isAdmin: boolean, // Grants register_group privilege
   deps: IpcDeps,
 ): Promise<void> {
   const registeredGroups = deps.registeredGroups();
@@ -416,8 +445,8 @@ export async function processTaskIpc(
       break;
 
     case 'register_group':
-      // Only main group can register new groups
-      if (!isMain) {
+      // Only main group or admin agents can register new groups
+      if (!isMain && !isAdmin) {
         logger.warn(
           { sourceGroup },
           'Unauthorized register_group attempt blocked',
@@ -440,6 +469,8 @@ export async function processTaskIpc(
           added_at: new Date().toISOString(),
           containerConfig: data.containerConfig,
           requiresTrigger: data.requiresTrigger,
+          agentTrigger: data.agentTrigger,
+          sharedGroupJid: data.sharedGroupJid,
         });
       } else {
         logger.warn(

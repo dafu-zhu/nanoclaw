@@ -21,6 +21,7 @@ import { logger } from './logger.js';
 import {
   CONTAINER_HOST_GATEWAY,
   CONTAINER_RUNTIME_BIN,
+  USE_HOST_NETWORK,
   hostGatewayArgs,
   readonlyMountArgs,
   stopContainer,
@@ -41,6 +42,7 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  imageAttachments?: Array<{ relativePath: string; mediaType: string }>;
 }
 
 export interface ContainerOutput {
@@ -209,14 +211,39 @@ function buildVolumeMounts(
     mounts.push(...validatedMounts);
   }
 
+  // Mount all agent group folders read-only under /workspace/extra/{folder}/
+  // Used by orchestrator agents (e.g. Nahida) that need cross-agent visibility.
+  if (group.containerConfig?.mountAllGroups) {
+    const entries = fs.readdirSync(GROUPS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const folderName = entry.name;
+      const hostPath = path.join(GROUPS_DIR, folderName);
+      // Skip own workspace (already mounted read-write at /workspace/group)
+      if (hostPath === groupDir) continue;
+      mounts.push({
+        hostPath,
+        containerPath: `/workspace/extra/${folderName}`,
+        readonly: true,
+      });
+    }
+  }
+
   return mounts;
 }
 
 function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
+  isAdmin?: boolean,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
+
+  // On bare-metal Linux, use host networking so the container can reach
+  // the credential proxy at localhost:3001 without iptables interference.
+  if (USE_HOST_NETWORK) {
+    args.push('--network=host');
+  }
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
@@ -236,6 +263,11 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Grant admin privilege (register_group without isMain)
+  if (isAdmin) {
+    args.push('-e', 'NANOCLAW_IS_ADMIN=1');
   }
 
   // Runtime-specific args for host gateway resolution
@@ -278,7 +310,11 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName);
+  const containerArgs = buildContainerArgs(
+    mounts,
+    containerName,
+    group.containerConfig?.isAdmin,
+  );
 
   logger.debug(
     {

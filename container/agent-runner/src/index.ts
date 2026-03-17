@@ -27,6 +27,7 @@ interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  imageAttachments?: Array<{ relativePath: string; mediaType: string }>;
 }
 
 interface ContainerOutput {
@@ -47,9 +48,13 @@ interface SessionsIndex {
   entries: SessionEntry[];
 }
 
+type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } };
+
 interface SDKUserMessage {
   type: 'user';
-  message: { role: 'user'; content: string };
+  message: { role: 'user'; content: string | ContentBlock[] };
   parent_tool_use_id: null;
   session_id: string;
 }
@@ -71,6 +76,16 @@ class MessageStream {
     this.queue.push({
       type: 'user',
       message: { role: 'user', content: text },
+      parent_tool_use_id: null,
+      session_id: '',
+    });
+    this.waiting?.();
+  }
+
+  pushMultimodal(blocks: ContentBlock[]): void {
+    this.queue.push({
+      type: 'user',
+      message: { role: 'user', content: blocks },
       parent_tool_use_id: null,
       session_id: '',
     });
@@ -340,6 +355,22 @@ async function runQuery(
   const stream = new MessageStream();
   stream.push(prompt);
 
+  // Load image attachments and push as multimodal content blocks
+  if (containerInput.imageAttachments?.length) {
+    const blocks: ContentBlock[] = [];
+    for (const img of containerInput.imageAttachments) {
+      const imgPath = path.join('/workspace/group', img.relativePath);
+      try {
+        const data = fs.readFileSync(imgPath).toString('base64');
+        blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data } });
+        log(`Loaded image: ${imgPath}`);
+      } catch (err) {
+        log(`Failed to load image: ${imgPath}`);
+      }
+    }
+    if (blocks.length > 0) stream.pushMultimodal(blocks);
+  }
+
   // Poll IPC for follow-up messages and _close sentinel during the query
   let ipcPolling = true;
   let closedDuringQuery = false;
@@ -421,6 +452,7 @@ async function runQuery(
             NANOCLAW_CHAT_JID: containerInput.chatJid,
             NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            NANOCLAW_IS_ADMIN: process.env.NANOCLAW_IS_ADMIN || '0',
           },
         },
       },
