@@ -36,8 +36,7 @@ export const CONTAINER_HOST_GATEWAY = USE_HOST_NETWORK
  * Docker Desktop (macOS/WSL): 127.0.0.1
  * Bare-metal Linux with host networking: 127.0.0.1 (container IS the host)
  */
-export const PROXY_BIND_HOST =
-  process.env.CREDENTIAL_PROXY_HOST || '127.0.0.1';
+export const PROXY_BIND_HOST = process.env.CREDENTIAL_PROXY_HOST || '127.0.0.1';
 
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {

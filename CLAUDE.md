@@ -158,7 +158,7 @@ Alhaitham is the single entry point for all academic agent management. The user 
 1. **Creates TA teams** — picks characters from appropriate relationship groups, names agents, fills templates, writes CLAUDE.md files, creates group folders
 2. **Creates research teams** — same process, 5 roles per team (Lead, Scout, Prereqs, Literature, Experimentalist)
 3. **Handles quarter transitions** — archives old TAs (never deletes), spins up new character-teams from new relationship groups
-4. **Requests group registration** — currently sends user a list to forward to main (see TD-001 for making this autonomous)
+4. **Registers groups directly** — calls `register_group` MCP tool with admin privilege (TD-001 implemented)
 5. **Deactivates agents** — requests unregistration of old teams at quarter end
 
 ### Alhaitham's Key Files
@@ -180,7 +180,7 @@ Alhaitham is the single entry point for all academic agent management. The user 
 4. Fills templates with `{{PLACEHOLDERS}}`: LEAD_NAME, PARTNER_NAME, COURSE_CODE, COURSE_TITLE, RELATIONSHIP_GROUP, SCHEDULE, QUARTER, TOPICS
 5. Creates `groups/{character_name}/CLAUDE.md` for each new agent
 6. Updates `character-registry.md`, `groups/global/CLAUDE.md` roster, Nahida's directory
-7. Sends registration request to user (or registers directly if TD-001 is implemented)
+7. Registers each new group directly via `register_group` MCP tool (admin privilege)
 8. Archives old quarter's TAs (unregister, mark as archived in registry)
 
 ### Template Placeholders
@@ -253,28 +253,9 @@ groups/
 
 Source code changes needed. Reference these by TD-XXX when working on them.
 
-## TD-001: Admin privilege for Alhaitham [HIGH — blocks autonomous orchestration]
+## TD-001: Admin privilege for Alhaitham [DONE]
 
-**File:** `container/agent-runner/src/ipc-mcp-stdio.ts`, `src/container-runner.ts`, `src/types.ts`
-
-**Problem:** `register_group` has `if (!isMain)` guard. Alhaitham can't register groups himself.
-
-**Fix:**
-1. Add `isAdmin?: boolean` to `ContainerConfig` in `src/types.ts`
-2. In `src/container-runner.ts` → `buildContainerArgs()`, after auth mode block:
-   ```typescript
-   if (group.containerConfig?.isAdmin) {
-     args.push('-e', 'NANOCLAW_IS_ADMIN=1');
-   }
-   ```
-3. In `container/agent-runner/src/ipc-mcp-stdio.ts`, add near the top:
-   ```typescript
-   const isAdmin = process.env.NANOCLAW_IS_ADMIN === '1';
-   ```
-4. Change `register_group` guard from `if (!isMain)` to `if (!isMain && !isAdmin)`
-5. Set `containerConfig: { isAdmin: true }` on Alhaitham's group registration
-
-**Workaround (current):** Alhaitham creates files/folders, sends user a list. User forwards to main for registration.
+`isAdmin?: boolean` in `ContainerConfig`. When set, injects `NANOCLAW_IS_ADMIN=1` into the container; `register_group` guard changed to `if (!isMain && !isAdmin)`. `register_group` schema expanded with `agentTrigger`, `sharedGroupJid`, `containerConfig` fields so Alhaitham can register full virtual JID agents in one call. Alhaitham's DB row has `isAdmin: true`.
 
 ## TD-002: Per-agent triggers (@AgentName routing) [DONE]
 
@@ -297,13 +278,9 @@ register_group({
 ```
 When `@Skirk ...` appears in Teyvat LLC, the orchestrator dispatches Skirk's container. She replies via her dedicated pool bot token (`containerConfig.poolBotToken`). Each agent has its own cursor and queue slot.
 
-## TD-003: Nahida read-only access to all agent workspaces [HIGH]
+## TD-003: Nahida read-only access to all agent workspaces [DONE]
 
-**File:** `src/container-runner.ts` → `buildVolumeMounts()`
-
-**Problem:** Non-main agents only see their own folder + global. Nahida needs all folders to build daily plans.
-
-**Fix:** Add `additionalMounts` to Nahida's group config mounting every group folder read-only under `/workspace/extra/`.
+`mountAllGroups?: boolean` in `ContainerConfig`. When set, `buildVolumeMounts()` iterates `GROUPS_DIR` at spawn time and mounts every subfolder read-only at `/workspace/extra/{folder}/`. Auto-discovers new agents — no manual updates needed. Nahida's DB row has `mountAllGroups: true`.
 
 ## TD-004: Inter-agent messaging — send_to_agent [MEDIUM]
 
