@@ -10,12 +10,27 @@
  *             Proxy injects real OAuth token on that exchange request;
  *             subsequent requests carry the temp key which is valid as-is.
  */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { createServer, Server } from 'http';
 import { request as httpsRequest } from 'https';
 import { request as httpRequest, RequestOptions } from 'http';
 
 import { readEnvFile } from './env.js';
 import { logger } from './logger.js';
+
+/** Read the OAuth access token directly from ~/.claude/.credentials.json. */
+function readClaudeCredentials(): string | undefined {
+  try {
+    const file = path.join(os.homedir(), '.claude', '.credentials.json');
+    const raw = fs.readFileSync(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed?.claudeAiOauth?.accessToken ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export type AuthMode = 'api-key' | 'oauth';
 
@@ -32,7 +47,9 @@ export function startCredentialProxy(
     'ANTHROPIC_BASE_URL',
   ]);
 
-  const authMode: AuthMode = staticSecrets.ANTHROPIC_API_KEY ? 'api-key' : 'oauth';
+  const authMode: AuthMode = staticSecrets.ANTHROPIC_API_KEY
+    ? 'api-key'
+    : 'oauth';
 
   const upstreamUrl = new URL(
     staticSecrets.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
@@ -68,14 +85,13 @@ export function startCredentialProxy(
           // (exchange request + auth probes). Post-exchange requests use
           // x-api-key only, so they pass through without token injection.
           if (headers['authorization']) {
-            // Re-read token on every auth injection so token refreshes take
-            // effect without restarting the service.
-            const liveSecrets = readEnvFile([
-              'CLAUDE_CODE_OAUTH_TOKEN',
-              'ANTHROPIC_AUTH_TOKEN',
-            ]);
+            // Read token directly from ~/.claude/.credentials.json on every
+            // auth request — always in sync with `claude /login` immediately.
+            // Fall back to .env values if the credentials file is unavailable.
             const oauthToken =
-              liveSecrets.CLAUDE_CODE_OAUTH_TOKEN || liveSecrets.ANTHROPIC_AUTH_TOKEN;
+              readClaudeCredentials() ||
+              readEnvFile(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN'])
+                .CLAUDE_CODE_OAUTH_TOKEN;
             delete headers['authorization'];
             if (oauthToken) {
               headers['authorization'] = `Bearer ${oauthToken}`;
