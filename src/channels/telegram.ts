@@ -363,12 +363,12 @@ export class TelegramChannel implements Channel {
         isGroup,
       );
 
-      // Pick the largest photo size
-      const photos = ctx.message.photo;
-      const photo = photos[photos.length - 1];
       let content = caption ? `[Photo] ${caption}` : '[Photo]';
 
       try {
+        // Pick the largest photo size
+        const photos = ctx.message.photo;
+        const photo = photos[photos.length - 1];
         const file = await ctx.api.getFile(photo.file_id);
         if (file.file_path) {
           const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
