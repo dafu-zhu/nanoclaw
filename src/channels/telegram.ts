@@ -412,28 +412,29 @@ export class TelegramChannel implements Channel {
                 (g) => g.sharedGroupJid === chatJid,
               );
           if (targetGroups.length > 0) {
+            const firstGroupDir = resolveGroupFolderPath(
+              targetGroups[0].folder,
+            );
             const processed = await processImage(
               buffer,
-              resolveGroupFolderPath(targetGroups[0].folder),
+              firstGroupDir,
               caption,
             );
             if (processed) {
               content = processed.content;
               // Copy to remaining agents' folders
               const srcPath = path.join(
-                resolveGroupFolderPath(targetGroups[0].folder),
+                firstGroupDir,
                 processed.relativePath,
               );
+              const filename = path.basename(processed.relativePath);
               for (let i = 1; i < targetGroups.length; i++) {
                 const destDir = path.join(
                   resolveGroupFolderPath(targetGroups[i].folder),
                   'attachments',
                 );
                 fs.mkdirSync(destDir, { recursive: true });
-                fs.copyFileSync(
-                  srcPath,
-                  path.join(destDir, path.basename(processed.relativePath)),
-                );
+                fs.copyFileSync(srcPath, path.join(destDir, filename));
               }
             }
           }
