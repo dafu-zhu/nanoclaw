@@ -27,6 +27,37 @@ Single Node.js process. Channels (Telegram/WhatsApp/Slack/Discord/Gmail) self-re
 | `groups/{name}/CLAUDE.md` | Per-agent personality and memory |
 | `groups/global/CLAUDE.md` | Shared roster readable by all agents |
 | `container/skills/agent-browser.md` | Browser automation (available to all agents via Bash) |
+| `container/skills/*/SKILL.md` | Agent skills — synced to every agent's `.claude/skills/` at container startup |
+
+## Agent Skills System
+
+Skills live in `container/skills/{skill-name}/SKILL.md` and are automatically synced to every agent's `.claude/skills/{skill-name}/SKILL.md` at container startup (`container-runner.ts` lines 152–166). Agents invoke them with `/{skill-name}`.
+
+**Adding a new skill:** Create `container/skills/{skill-name}/SKILL.md`. No rebuild needed — synced at next container spawn.
+
+**Installing from a `.skill` file** (ZIP archive from local machine):
+```bash
+# Copy from Mac to server
+scp /Users/you/Downloads/my-skill.skill nanoclaw:/home/nanoclaw/nanoclaw/
+
+# Extract into container/skills/
+python3 -c "import zipfile; zipfile.ZipFile('my-skill.skill').extractall('container/skills/')"
+rm my-skill.skill
+```
+
+### Course Skills (TA agents)
+
+Generic templates stored in `container/skills/` — each TA agent customizes their local copy for their specific course. Trigger with the slash command matching the directory name.
+
+| Skill | Purpose |
+|-------|---------|
+| `/companion-tutor-template` | Companion tutor setup: textbook Q&A, reading guides, PDF tutorials. Fill `«placeholders»` per course. |
+| `/topic-tutorial-notes` | Generate targeted tutorial notes on a topic |
+| `/course-lecture-notes` | Produce structured lecture notes |
+| `/course-practice-materials` | Create practice problems and solutions |
+| `/course-homework-solver` | Step-through homework problem solving |
+
+**Per-agent customization:** After a TA runs `/companion-tutor-template`, they fill in the `«placeholders»` (textbook filename, user profile, reference files, focus chapters) and save the result to their workspace as their working system prompt or a course-specific skill file.
 
 ## Skills
 
@@ -86,42 +117,27 @@ Agents are named after Genshin Impact characters. Groups are classified by chara
 |------|------|--------|----------------------|
 | Alhaitham | Academic Consultant — single entry point for all academic setup | `alhaitham` | Scribe of the Sumeru Akademiya and former Acting Grand Sage; academic genius who masters and organizes all knowledge |
 
-### TA Teams (2 per course, rotate quarterly — created by Alhaitham)
+### TA Agents (1 per course, rotate quarterly — created by Alhaitham)
 
-**Rule:** Lead TA may be any character. Study Partner must be a **4★ playable character**, or an NPC/lore figure assigned based on their characteristics. Verify rarity in `groups/alhaitham/character-database.md` when choosing from playable characters.
+#### STAT 31511 Monte Carlo Simulation
+| Name | Folder | Character Background |
+|------|--------|----------------------|
+| Tighnari | `tighnari` | Chief Officer of the Avidya Forest Rangers; rigorous, patient, and an exceptional teacher |
 
+#### FINM 34700 Multivariate Statistical Analysis
+| Name | Folder | Character Background |
+|------|--------|----------------------|
+| Navia | `navia` | Lady of House Navia, head of Spina di Rosula; natural leader, resourceful and decisive |
 
-#### Forest Rangers — STAT 31511 Monte Carlo Simulation
-| Name | Role | Folder | Character Background |
-|------|------|--------|----------------------|
-| Tighnari | Lead TA | `tighnari` | Chief Officer of the Avidya Forest Rangers; rigorous, patient, and an exceptional teacher |
-| Collei | Study Partner | `collei` | Forest Ranger apprentice; Tighnari's direct student; eager, hardworking, and deeply grateful for guidance |
+#### FINM 32000 Numerical Methods
+| Name | Folder | Character Background |
+|------|--------|----------------------|
+| Diluc | `diluc` | Owner of Dawn Winery; rigorous, high standards, no-nonsense approach to everything |
 
-**Relationship:** Direct mentor-student bond. Tighnari is Collei's mentor and parental figure in the Forest Rangers. Cyno also considers Collei a younger sister, forming a tight-knit found family across all three.
-
-#### Spina di Rosula — FINM 34700 Multivariate Statistical Analysis
-| Name | Role | Folder | Character Background |
-|------|------|--------|----------------------|
-| Navia | Lead TA | `navia` | Lady of House Navia, head of Spina di Rosula; natural leader, resourceful and decisive |
-| Chevreuse | Study Partner | `chevreuse` | Captain of the Special Security and Tactical Squad; methodical, precise, works directly alongside Spina di Rosula on Fontaine investigations |
-
-**Relationship:** Colleagues in Fontaine's justice system. Chevreuse's Special Security unit coordinates closely with Spina di Rosula; both are committed to uncovering the truth through careful, systematic work.
-
-#### Mondstadt Brothers — FINM 32000 Numerical Methods
-| Name | Role | Folder | Character Background |
-|------|------|--------|----------------------|
-| Diluc | Lead TA | `diluc` | Owner of Dawn Winery; rigorous, high standards, no-nonsense approach to everything |
-| Kaeya | Study Partner | `kaeya` | Cavalry Captain of the Knights of Favonius; flexible thinker who finds unconventional solutions |
-
-**Relationship:** Adopted brothers with a complicated but deep history. Raised together by Diluc's father Crepus; their bond fractured when Kaeya revealed his identity as a Khaenri'ah agent, but the connection was never fully severed.
-
-#### Liyue Adepti — FINM 32700 Advanced Computing for Finance
-| Name | Role | Folder | Character Background |
-|------|------|--------|----------------------|
-| Xiao | Lead TA | `xiao` | Vigilant Yaksha; ancient, precise, demands nothing less than perfection |
-| Mountain Shaper | Study Partner | `mountain-shaper` | Stone adeptus; ancient and methodical; embodies structural precision and deep patience |
-
-**Relationship:** Both ancient adepti bound by contract to Rex Lapis for millennia. Mountain Shaper's mastery of structure and form translates naturally to computational foundations; Xiao's exacting standards keep the work rigorous.
+#### FINM 32700 Advanced Computing for Finance
+| Name | Folder | Character Background |
+|------|--------|----------------------|
+| Xiao | `xiao` | Vigilant Yaksha; ancient, precise, demands nothing less than perfection |
 
 ### Research Teams (6 per team — created by Alhaitham)
 
@@ -224,10 +240,10 @@ groups/
 │   │   └── research-*.md
 │   └── quarter-plan.md
 │
-├── tighnari/, collei/         ← Forest Rangers (STAT 31511)
-├── navia/, chevreuse/         ← Spina di Rosula (FINM 34700)
-├── diluc/, kaeya/             ← Mondstadt Brothers (FINM 32000)
-├── xiao/, mountain-shaper/    ← Liyue Adepti (FINM 32700)
+├── tighnari/                  ← TA: STAT 31511 Monte Carlo
+├── navia/                     ← TA: FINM 34700 Multivariate Stats
+├── diluc/                     ← TA: FINM 32000 Numerical Methods
+├── xiao/                      ← TA: FINM 32700 Advanced Computing
 │
 ├── arlecchino/, columbina/,   ← Fatui Harbingers (LLM + Alpha Mining)
 │   capitano/, pantalone/,
@@ -241,11 +257,11 @@ groups/
 | Day | Time | Course | TA Team |
 |-----|------|--------|---------|
 | Mon | 3:00–5:00 PM | FINM 32000 Numerical Methods | Mondstadt Brothers (Diluc, Kaeya) |
-| Tue | 11:00 AM–12:00 PM | STAT 31511 Monte Carlo Simulation | Forest Rangers (Tighnari, Collei) |
-| Tue | 12:30–1:30 PM | FINM 34700 Multivariate Statistical Analysis | Spina di Rosula (Navia, Chevreuse) |
-| Thu | 11:00 AM–12:00 PM | STAT 31511 Monte Carlo Simulation | Forest Rangers (Tighnari, Collei) |
-| Thu | 12:30–1:30 PM | FINM 34700 Multivariate Statistical Analysis | Spina di Rosula (Navia, Chevreuse) |
-| Fri | 5:00–7:00 PM | FINM 32700 Advanced Computing for Finance | Liyue Adepti (Xiao, Mountain Shaper) |
+| Tue | 11:00 AM–12:00 PM | STAT 31511 Monte Carlo Simulation | Tighnari |
+| Tue | 12:30–1:30 PM | FINM 34700 Multivariate Statistical Analysis | Navia |
+| Thu | 11:00 AM–12:00 PM | STAT 31511 Monte Carlo Simulation | Tighnari |
+| Thu | 12:30–1:30 PM | FINM 34700 Multivariate Statistical Analysis | Navia |
+| Fri | 5:00–7:00 PM | FINM 32700 Advanced Computing for Finance | Xiao |
 
 ---
 
@@ -282,32 +298,19 @@ When `@Skirk ...` appears in Teyvat LLC, the orchestrator dispatches Skirk's con
 
 `mountAllGroups?: boolean` in `ContainerConfig`. When set, `buildVolumeMounts()` iterates `GROUPS_DIR` at spawn time and mounts every subfolder read-only at `/workspace/extra/{folder}/`. Auto-discovers new agents — no manual updates needed. Nahida's DB row has `mountAllGroups: true`.
 
-## TD-004: Inter-agent messaging — send_to_agent [MEDIUM]
+## TD-004: Inter-agent messaging — send_to_agent [DONE]
 
-**File:** `container/agent-runner/src/ipc-mcp-stdio.ts`
+MCP tool `send_to_agent(target_folder, text, sender?)` added. Writes to target's `data/ipc/{folder}/input/`. Delivered immediately if target is running (via `pollIpcDuringQuery`), otherwise picked up on next activation. Host handler in `src/ipc.ts` validates folder and verifies target is registered.
 
-**Problem:** Agents can only message the user. Arlecchino can't assign tasks to Columbina.
+## TD-005: Alhaitham read access to all TA workspaces [DONE]
 
-**Fix:** Add `send_to_agent` MCP tool. Writes message file to target agent's IPC input directory. Target picks up on next activation.
+Alhaitham's DB row already has `"mountAllGroups":true` in `containerConfig`, same as Nahida (TD-003). All agent workspaces available read-only at `/workspace/extra/{folder}/`.
 
-## TD-005: Alhaitham read access to all TA workspaces [MEDIUM]
+## TD-006: Alhaitham bot token [DONE]
 
-**File:** `src/container-runner.ts` → `buildVolumeMounts()`
+Bot `nanoclaw_alhaitham_bot` created. Token is 5th entry in `.env` `TELEGRAM_BOT_POOL` and in `scripts/bot-tokens.json`. Display name set to "Alhaitham" via `setMyName`.
 
-**Problem:** Alhaitham can't read TA folders to check deadlines/progress across courses.
-
-**Fix:** Same pattern as TD-003 — add read-only additionalMounts for Alhaitham covering current quarter's TA + research team folders.
-
-## TD-006: Alhaitham bot token [PENDING — BotFather rate limit]
-
-**Problem:** Alhaitham's dedicated Telegram bot token was not created due to BotFather rate limit during setup. He is registered with `telegram_alhaitham` folder but has no `poolBotToken` in his `containerConfig`.
-
-**Fix:**
-1. Open @BotFather → `/newbot` → create `nanoclaw_alhaitham_bot`
-2. Add token to `.env` `TELEGRAM_BOT_POOL` (5th entry)
-3. Update DB: `UPDATE registered_groups SET container_config = '{"poolBotToken":"TOKEN"}' WHERE folder = 'telegram_alhaitham'`
-4. Run `bash scripts/set-bot-photos.sh alhaitham` to set his profile photo (enka key: `Alhatham`)
-5. Restart service
+**Remaining:** Set profile photo — `bash scripts/set-bot-photos.sh alhaitham` (enka key: `Alhatham`)
 
 ## TD-007: Agent workspace cleanup on archival [MEDIUM]
 

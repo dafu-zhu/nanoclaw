@@ -192,8 +192,16 @@ function buildVolumeMounts(
     group.folder,
     'agent-runner-src',
   );
-  if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
-    fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
+  // Always sync system files (index.ts, ipc-mcp-stdio.ts) so new MCP tools
+  // reach all agents automatically. Extra files agents add are left untouched.
+  if (fs.existsSync(agentRunnerSrc)) {
+    fs.mkdirSync(groupAgentRunnerDir, { recursive: true });
+    for (const file of fs.readdirSync(agentRunnerSrc)) {
+      fs.copyFileSync(
+        path.join(agentRunnerSrc, file),
+        path.join(groupAgentRunnerDir, file),
+      );
+    }
   }
   mounts.push({
     hostPath: groupAgentRunnerDir,
@@ -207,13 +215,16 @@ function buildVolumeMounts(
       group.containerConfig.additionalMounts,
       group.name,
       isMain,
+      !!group.containerConfig?.isAdmin,
     );
     mounts.push(...validatedMounts);
   }
 
-  // Mount all agent group folders read-only under /workspace/extra/{folder}/
-  // Used by orchestrator agents (e.g. Nahida) that need cross-agent visibility.
-  if (group.containerConfig?.mountAllGroups) {
+  // Mount all agent group folders under /workspace/extra/{folder}/
+  // mountAllGroups = read-only (e.g. Nahida for visibility)
+  // writeAllGroups = read-write (e.g. Alhaitham for writing agent CLAUDE.md files)
+  if (group.containerConfig?.mountAllGroups || group.containerConfig?.writeAllGroups) {
+    const writable = !!group.containerConfig?.writeAllGroups;
     const entries = fs.readdirSync(GROUPS_DIR, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -224,7 +235,7 @@ function buildVolumeMounts(
       mounts.push({
         hostPath,
         containerPath: `/workspace/extra/${folderName}`,
-        readonly: true,
+        readonly: !writable,
       });
     }
   }
@@ -236,6 +247,8 @@ function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
   isAdmin?: boolean,
+  modelOverride?: string,
+  injectEnvKeys?: string[],
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
@@ -268,6 +281,25 @@ function buildContainerArgs(
   // Grant admin privilege (register_group without isMain)
   if (isAdmin) {
     args.push('-e', 'NANOCLAW_IS_ADMIN=1');
+    // Pass Telegram API credentials so admin agents can run bot creation scripts
+    for (const key of ['TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_PHONE']) {
+      if (process.env[key]) args.push('-e', `${key}=${process.env[key]}`);
+    }
+  }
+
+  // Per-agent model override
+  if (modelOverride) {
+    args.push('-e', `NANOCLAW_MODEL=${modelOverride}`);
+  }
+
+  // Pass-through host env vars declared in containerConfig.injectEnv
+  if (injectEnvKeys?.length) {
+    for (const key of injectEnvKeys) {
+      const val = process.env[key];
+      if (val !== undefined) {
+        args.push('-e', `${key}=${val}`);
+      }
+    }
   }
 
   // Runtime-specific args for host gateway resolution
@@ -314,6 +346,8 @@ export async function runContainerAgent(
     mounts,
     containerName,
     group.containerConfig?.isAdmin,
+    group.containerConfig?.model,
+    group.containerConfig?.injectEnv,
   );
 
   logger.debug(

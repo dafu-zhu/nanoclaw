@@ -423,6 +423,7 @@ async function runQuery(
   for await (const message of query({
     prompt: stream,
     options: {
+      model: process.env.NANOCLAW_MODEL || 'claude-sonnet-4-6',
       cwd: '/workspace/group',
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
       resume: sessionId,
@@ -555,6 +556,7 @@ async function main(): Promise<void> {
       for await (const message of query({
         prompt: trimmedPrompt,
         options: {
+          model: process.env.NANOCLAW_MODEL || 'claude-sonnet-4-6',
           cwd: '/workspace/group',
           resume: sessionId,
           systemPrompt: undefined,

@@ -38,47 +38,29 @@ const BOTFATHER = 'BotFather';
 // Account A (main): bots-a.json  — indices 0..11
 // Account B (+86):  bots-b.json  — indices 12..23
 // Username format: nanoclaw_{name}_bot (must be unique globally — adjust if taken)
+// Rule: solo agents get bots, lead TAs get bots, research leads get bots.
+// Study partners and non-lead research members communicate via send_to_agent only — no bot needed.
 const ALL_BOTS = [
-  // Solo agents
-  { name: 'Skirk',          username: 'nanoclaw_skirk_bot' },
-  { name: 'Nahida',         username: 'nanoclaw_nahida_bot' },
-  { name: 'Zhongli',        username: 'nanoclaw_zhongli_bot' },
-  { name: 'Raiden',         username: 'nanoclaw_raiden_bot' },
-  { name: 'Alhaitham',      username: 'nanoclaw_alhaitham_bot' },
+  // Solo agents (5)
+  { name: 'Skirk',      username: 'nanoclaw_skirk_bot' },
+  { name: 'Nahida',     username: 'nanoclaw_nahida_bot' },
+  { name: 'Zhongli',    username: 'nanoclaw_zhongli_bot' },
+  { name: 'Raiden',     username: 'nanoclaw_raiden_bot' },
+  { name: 'Alhaitham',  username: 'nanoclaw_alhaitham_bot' },
 
-  // Forest Rangers (STAT 31511)
-  { name: 'Tighnari',       username: 'nanoclaw_tighnari_bot' },
-  { name: 'Collei',         username: 'nanoclaw_collei_bot' },
+  // Lead TAs only (4)
+  { name: 'Tighnari',   username: 'nanoclaw_tighnari_bot' },   // STAT 31511
+  { name: 'Navia',      username: 'nanoclaw_navia_bot' },      // FINM 34700
+  { name: 'Diluc',      username: 'nanoclaw_diluc_bot' },      // FINM 32000
+  { name: 'Xiao',       username: 'nanoclaw_xiao_bot' },       // FINM 32700
 
-  // Spina di Rosula (FINM 34700)
-  { name: 'Navia',          username: 'nanoclaw_navia_bot' },
-  { name: 'Chevreuse',      username: 'nanoclaw_chevreuse_bot' },
+  // Research leads only (3)
+  { name: 'Arlecchino', username: 'nanoclaw_arlecchino_bot' }, // Fatui — LLM + Alpha
+  { name: 'Keqing',     username: 'nanoclaw_keqing_bot' },     // Liyue Qixing — Derivatives
+  { name: 'Neuvillette', username: 'nanoclaw_neuvillette_bot' },// Court of Fontaine — Alpha-lab infra
 
-  // Mondstadt Brothers (FINM 32000)
-  { name: 'Diluc',          username: 'nanoclaw_diluc_bot' },
-  { name: 'Kaeya',          username: 'nanoclaw_kaeya_bot' },
-
-  // Liyue Adepti (FINM 32700)
-  { name: 'Xiao',           username: 'nanoclaw_xiao_bot' },
-
-  // Mountain Shaper — username has a dash, bots don't support dashes, use underscore
-  { name: 'Mountain Shaper', username: 'nanoclaw_mountain_shaper_bot' },
-
-  // Fatui Harbingers (LLM Alpha)
-  { name: 'Arlecchino',     username: 'nanoclaw_arlecchino_bot' },
-  { name: 'Columbina',      username: 'nanoclaw_columbina_bot' },
-  { name: 'Il Capitano',    username: 'nanoclaw_capitano_bot' },
-  { name: 'Pantalone',      username: 'nanoclaw_pantalone_bot' },
-  { name: 'Tartaglia',      username: 'nanoclaw_tartaglia_bot' },
-  { name: 'Sandrone',       username: 'nanoclaw_sandrone_bot' },
-
-  // Liyue Qixing (Derivatives)
-  { name: 'Keqing',         username: 'nanoclaw_keqing_bot' },
-  { name: 'Yanfei',         username: 'nanoclaw_yanfei_bot' },
-  { name: 'Xingqiu',        username: 'nanoclaw_xingqiu_bot' },
-  { name: 'Ningguang',      username: 'nanoclaw_ningguang_bot' },
-  { name: 'Hu Tao',         username: 'nanoclaw_hutao_bot' },
-  { name: 'Ganyu',          username: 'nanoclaw_ganyu_bot' },
+  // Solo agents (additional)
+  { name: 'Lisa',       username: 'nanoclaw_lisa_bot' },       // Learning Tracker
 ];
 
 // ---------------------------------------------------------------------------
@@ -158,6 +140,18 @@ const ask = (q) => new Promise((res) => rl.question(q, res));
  *   We → {username}
  *   BF → "Done! ... token: xxxxxxxx:yyyy..." (or an error)
  */
+// Sentinel returned when BotFather is rate-limiting — signals the main loop to stop
+const RATE_LIMITED = Symbol('RATE_LIMITED');
+
+/**
+ * Parse BotFather "try again in X seconds" message.
+ * Returns seconds to wait, or null if not a rate-limit message.
+ */
+function parseRateLimit(text) {
+  const m = text.match(/try again in (\d+) second/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 async function createBot(client, displayName, username) {
   return new Promise(async (resolve) => {
     let step = 0;
@@ -172,6 +166,18 @@ async function createBot(client, displayName, username) {
 
       const text = msg.message || '';
       console.log(`  BotFather [step ${step}]: ${text.split('\n')[0].slice(0, 80)}`);
+
+      // Rate limit detection — check at any step
+      const waitSecs = parseRateLimit(text);
+      if (waitSecs !== null) {
+        const waitMins = Math.ceil(waitSecs / 60);
+        const resumeTime = new Date(Date.now() + waitSecs * 1000).toLocaleTimeString();
+        console.log(`\n  ⛔ BotFather rate limit: wait ${waitSecs}s (~${waitMins} min). Resume after ${resumeTime}.`);
+        console.log(`  Stopping. Re-run this command after the wait.\n`);
+        client.removeEventHandler(handler, new NewMessage({}));
+        resolve(RATE_LIMITED);
+        return;
+      }
 
       if (step === 0) {
         // Received initial /newbot acknowledgement — send display name
@@ -394,6 +400,13 @@ async function main() {
     console.log(`[${i + 1}/${remaining.length}] Creating @${bot.username} (${bot.name})...`);
 
     const token = await createBot(client, bot.name, bot.username);
+
+    if (token === RATE_LIMITED) {
+      console.log(`  Tokens saved so far: ${Object.keys(tokens).length}`);
+      await client.disconnect();
+      rl.close();
+      process.exit(0);
+    }
 
     if (token) {
       console.log(`  ✓ Token: ${token.slice(0, 12)}...`);

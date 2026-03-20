@@ -289,6 +289,7 @@ export class TelegramChannel implements Channel {
         content,
         timestamp,
         is_from_me: false,
+        is_bot_message: ctx.from?.is_bot === true,
       });
 
       logger.info(
@@ -333,6 +334,7 @@ export class TelegramChannel implements Channel {
         content: `${placeholder}${caption}`,
         timestamp,
         is_from_me: false,
+        is_bot_message: ctx.from?.is_bot === true,
       });
     };
 
@@ -410,24 +412,143 @@ export class TelegramChannel implements Channel {
         content,
         timestamp,
         is_from_me: false,
+        is_bot_message: ctx.from?.is_bot === true,
       });
     });
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
-    this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
+
+    // Download voice and audio to the group attachments folder
+    const downloadAudio = async (ctx: any, typeLabel: string, ext: string) => {
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      const isSharedGroupJid =
+        !group &&
+        Object.values(this.opts.registeredGroups()).some(
+          (g) => g.sharedGroupJid === chatJid,
+        );
+      if (!group && !isSharedGroupJid) return;
+
+      const timestamp = new Date(ctx.message.date * 1000).toISOString();
+      const senderName =
+        ctx.from?.first_name ||
+        ctx.from?.username ||
+        ctx.from?.id?.toString() ||
+        'Unknown';
+      const caption = ctx.message.caption || '';
+      const isGroup =
+        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
+
+      let content = caption
+        ? `[${typeLabel}: ${typeLabel.toLowerCase()}.${ext}] ${caption}`
+        : `[${typeLabel}]`;
+
+      try {
+        const fileId =
+          ctx.message.voice?.file_id ?? ctx.message.audio?.file_id;
+        const file = await ctx.api.getFile(fileId);
+        if (file.file_path) {
+          const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
+          const buffer = await new Promise<Buffer>((resolve, reject) => {
+            https
+              .get(url, (res) => {
+                const chunks: Buffer[] = [];
+                res.on('data', (c: Buffer) => chunks.push(c));
+                res.on('end', () => resolve(Buffer.concat(chunks)));
+                res.on('error', reject);
+              })
+              .on('error', reject);
+          });
+
+          const targetGroups = group
+            ? [group]
+            : Object.values(this.opts.registeredGroups()).filter(
+                (g) => g.sharedGroupJid === chatJid,
+              );
+          if (targetGroups.length > 0) {
+            const slug = typeLabel.toLowerCase();
+            const filename = `${slug}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+            for (const tg of targetGroups) {
+              const groupDir = resolveGroupFolderPath(tg.folder);
+              const attachDir = path.join(groupDir, 'attachments');
+              fs.mkdirSync(attachDir, { recursive: true });
+              fs.writeFileSync(path.join(attachDir, filename), buffer);
+            }
+            const containerPath = `/workspace/group/attachments/${filename}`;
+            content = caption
+              ? `[${typeLabel}: ${containerPath}] ${caption}`
+              : `[${typeLabel}: ${containerPath}]`;
+          }
+        }
+      } catch (err: any) {
+        const tooBig =
+          err?.error_code === 400 &&
+          typeof err?.description === 'string' &&
+          err.description.toLowerCase().includes('file is too big');
+        if (tooBig) {
+          logger.warn(
+            { chatJid },
+            `Telegram ${typeLabel} exceeds 20MB Bot API limit — notifying agent`,
+          );
+          content = caption
+            ? `[${typeLabel}: too large to download via Bot API (>20MB)] ${caption}`
+            : `[${typeLabel}: too large to download via Bot API (>20MB) — ask the user to compress or split the file]`;
+        } else {
+          logger.warn(
+            { chatJid, err },
+            `Failed to download Telegram ${typeLabel}`,
+          );
+        }
+      }
+
+      this.opts.onMessage(chatJid, {
+        id: ctx.message.message_id.toString(),
+        chat_jid: chatJid,
+        sender: ctx.from?.id?.toString() || '',
+        sender_name: senderName,
+        content,
+        timestamp,
+        is_from_me: false,
+        is_bot_message: ctx.from?.is_bot === true,
+      });
+    };
+
+    this.bot.on('message:voice', (ctx) => downloadAudio(ctx, 'Voice', 'ogg'));
+    this.bot.on('message:audio', (ctx) => downloadAudio(ctx, 'Audio', 'mp3'));
     this.bot.on('message:document', async (ctx) => {
       const doc = ctx.message.document;
       const name = doc?.file_name || 'file';
+      const mimeType = doc?.mime_type || '';
       const isPdf =
-        doc?.mime_type === 'application/pdf' ||
-        (doc?.file_name || '').toLowerCase().endsWith('.pdf');
+        mimeType === 'application/pdf' ||
+        name.toLowerCase().endsWith('.pdf');
 
-      if (!isPdf) {
-        storeNonText(ctx, `[Document: ${name}]`);
-        return;
-      }
+      // Determine a short type label for the message
+      const typeLabel = isPdf
+        ? 'PDF'
+        : name.toLowerCase().endsWith('.docx') ||
+          mimeType.includes('wordprocessingml')
+        ? 'DOCX'
+        : name.toLowerCase().endsWith('.doc') ||
+          mimeType === 'application/msword'
+        ? 'DOC'
+        : name.toLowerCase().endsWith('.xlsx') ||
+          mimeType.includes('spreadsheetml')
+        ? 'XLSX'
+        : name.toLowerCase().endsWith('.xls') ||
+          mimeType.includes('ms-excel')
+        ? 'XLS'
+        : name.toLowerCase().endsWith('.pptx') ||
+          mimeType.includes('presentationml')
+        ? 'PPTX'
+        : name.toLowerCase().endsWith('.csv') || mimeType === 'text/csv'
+        ? 'CSV'
+        : name.toLowerCase().endsWith('.txt') ||
+          mimeType.startsWith('text/')
+        ? 'TXT'
+        : 'Document';
 
-      // PDF: download to group attachments folder
+      // Download all document types to the group attachments folder
       const chatJid = `tg:${ctx.chat.id}`;
       const group = this.opts.registeredGroups()[chatJid];
       const isSharedGroupJid =
@@ -454,7 +575,9 @@ export class TelegramChannel implements Channel {
         isGroup,
       );
 
-      let content = caption ? `[PDF: ${name}] ${caption}` : `[PDF: ${name}]`;
+      let content = caption
+        ? `[${typeLabel}: ${name}] ${caption}`
+        : `[${typeLabel}: ${name}]`;
 
       try {
         const file = await ctx.api.getFile(doc!.file_id);
@@ -471,25 +594,35 @@ export class TelegramChannel implements Channel {
               .on('error', reject);
           });
 
-          const targetGroup =
-            group ??
-            Object.values(this.opts.registeredGroups()).find(
-              (g) => g.sharedGroupJid === chatJid,
-            );
-          if (targetGroup) {
-            const groupDir = resolveGroupFolderPath(targetGroup.folder);
-            const attachDir = path.join(groupDir, 'attachments');
-            fs.mkdirSync(attachDir, { recursive: true });
-            const filename = `pdf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.pdf`;
-            const filePath = path.join(attachDir, filename);
-            fs.writeFileSync(filePath, buffer);
+          // For shared groups, save to ALL matching agents' folders so
+          // any dispatched agent finds the file at /workspace/group/attachments/
+          const targetGroups = group
+            ? [group]
+            : Object.values(this.opts.registeredGroups()).filter(
+                (g) => g.sharedGroupJid === chatJid,
+              );
+          if (targetGroups.length > 0) {
+            const ext = path.extname(name) || (isPdf ? '.pdf' : '');
+            const slug = typeLabel.toLowerCase();
+            const filename = `${slug}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}${ext}`;
+            for (const tg of targetGroups) {
+              const groupDir = resolveGroupFolderPath(tg.folder);
+              const attachDir = path.join(groupDir, 'attachments');
+              fs.mkdirSync(attachDir, { recursive: true });
+              fs.writeFileSync(path.join(attachDir, filename), buffer);
+            }
+            // Absolute container path is the same for all agents
+            const containerPath = `/workspace/group/attachments/${filename}`;
             content = caption
-              ? `[PDF: attachments/${filename}] ${caption}`
-              : `[PDF: attachments/${filename}]`;
+              ? `[${typeLabel}: ${containerPath}] ${caption}`
+              : `[${typeLabel}: ${containerPath}]`;
           }
         }
       } catch (err) {
-        logger.warn({ chatJid, err }, 'Failed to download Telegram PDF');
+        logger.warn(
+          { chatJid, err },
+          `Failed to download Telegram document (${typeLabel})`,
+        );
       }
 
       this.opts.onMessage(chatJid, {
@@ -500,6 +633,7 @@ export class TelegramChannel implements Channel {
         content,
         timestamp,
         is_from_me: false,
+        is_bot_message: ctx.from?.is_bot === true,
       });
     });
     this.bot.on('message:sticker', (ctx) => {

@@ -421,7 +421,15 @@ async function processSharedAgentMessages(vJid: string): Promise<boolean> {
             : JSON.stringify(result.result);
         const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
         if (text) {
-          await channel.sendMessage(physicalJid, text);
+          const poolBotToken = agentGroup.containerConfig?.poolBotToken;
+          if (poolBotToken) {
+            const fallback = (j: string, t: string) => channel.sendMessage(j, t);
+            await sendPoolMessage(physicalJid, text, agentGroup.name, agentGroup.folder, fallback, poolBotToken);
+          } else if (!vJid.startsWith('virtual:')) {
+            // Non-virtual agent (direct JID) — send via main bot
+            await channel.sendMessage(physicalJid, text);
+          }
+          // Virtual agent with no pool token: skip send — agent is internal only
           outputSentToUser = true;
         }
         resetIdleTimer();
@@ -599,6 +607,31 @@ async function startMessageLoop(): Promise<void> {
                 !agentGroup.agentTrigger
               )
                 continue;
+              const pat = makeTriggerPattern(agentGroup.agentTrigger);
+              const thisTriggered = groupMessages.some(
+                (m) =>
+                  pat.test(m.content.trim()) &&
+                  (m.is_from_me ||
+                    isTriggerAllowed(chatJid, m.sender, allowlist)),
+              );
+              // Skip if message explicitly targets a different agent (not this one)
+              const otherAgentTriggered =
+                !thisTriggered &&
+                Object.entries(registeredGroups).some(
+                  ([otherVJid, g]) =>
+                    otherVJid !== vJid &&
+                    g.sharedGroupJid === chatJid &&
+                    g.agentTrigger &&
+                    groupMessages.some(
+                      (m) =>
+                        makeTriggerPattern(g.agentTrigger!).test(
+                          m.content.trim(),
+                        ) &&
+                        (m.is_from_me ||
+                          isTriggerAllowed(chatJid, m.sender, allowlist)),
+                    ),
+                );
+              if (otherAgentTriggered) continue;
               const agentPending = getMessagesSince(
                 chatJid,
                 lastAgentTimestamp[vJid] || '',
@@ -622,14 +655,7 @@ async function startMessageLoop(): Promise<void> {
                   );
               } else {
                 // No active container — only start if @AgentName present
-                const pat = makeTriggerPattern(agentGroup.agentTrigger);
-                const triggered = groupMessages.some(
-                  (m) =>
-                    pat.test(m.content.trim()) &&
-                    (m.is_from_me ||
-                      isTriggerAllowed(chatJid, m.sender, allowlist)),
-                );
-                if (triggered) queue.enqueueMessageCheck(vJid);
+                if (thisTriggered) queue.enqueueMessageCheck(vJid);
               }
             }
             continue;
@@ -799,6 +825,75 @@ function recoverPendingMessages(): void {
       queue.enqueueMessageCheck(jid);
     }
   }
+}
+
+/**
+ * Activate an agent by folder name from an inter-agent IPC message.
+ * If already running, pollIpcDuringQuery picks up the message automatically.
+ * If idle, spawn a container with a synthetic prompt — the agent runner
+ * drains /workspace/ipc/input/ at startup and gets the real content.
+ */
+function activateAgentByFolder(folder: string): void {
+  const entry = Object.entries(registeredGroups).find(
+    ([_, g]) => g.folder === folder,
+  );
+  if (!entry) {
+    logger.warn({ folder }, 'activateAgent: folder not found in registered groups');
+    return;
+  }
+  const [jid, group] = entry;
+
+  // If active, pollIpcDuringQuery (500ms poll) handles it automatically
+  if (queue.isActive(jid)) {
+    logger.debug({ folder, jid }, 'Agent active, inter-agent message will be polled');
+    return;
+  }
+
+  const chatJid = group.sharedGroupJid ?? jid;
+  const queueKey = jid;
+  const taskId = `ipc-activate-${folder}-${Date.now()}`;
+
+  queue.enqueueTask(queueKey, taskId, async () => {
+    const channel = findChannel(channels, chatJid);
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const resetIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => queue.closeStdin(queueKey), IDLE_TIMEOUT);
+    };
+
+    await runAgent(
+      group,
+      '[SYSTEM: Inter-agent message waiting in your input queue. Read it now. You MUST reply using mcp__nanoclaw__send_to_agent — that is the only way your reply reaches the other agent. Plain text output and send_message do NOT reach them. Check /workspace/group/pending-collab.md for context if available.]',
+      chatJid,
+      async (result) => {
+        // Send text output to Telegram so the user can observe the exchange.
+        // Agents should also use send_to_agent to route replies back to each other.
+        if (result.result) {
+          const raw =
+            typeof result.result === 'string'
+              ? result.result
+              : JSON.stringify(result.result);
+          const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+          if (text && channel) {
+            const poolBotToken = group.containerConfig?.poolBotToken;
+            if (poolBotToken && jid.startsWith('virtual:')) {
+              const fallback = (j: string, t: string) => channel.sendMessage(j, t);
+              await sendPoolMessage(chatJid, text, group.name, group.folder, fallback, poolBotToken);
+            } else if (!jid.startsWith('virtual:')) {
+              // Non-virtual agent — send via main bot
+              await channel.sendMessage(chatJid, text);
+            }
+            // Virtual agent with no pool token: skip — internal only
+          }
+          resetIdleTimer();
+        }
+        if (result.status === 'success') queue.notifyIdle(queueKey);
+      },
+      jid.startsWith('virtual:') ? jid : undefined,
+    );
+
+    if (idleTimer) clearTimeout(idleTimer);
+  });
 }
 
 function ensureContainerSystemRunning(): void {
@@ -983,6 +1078,7 @@ async function main(): Promise<void> {
     getAvailableGroups,
     writeGroupsSnapshot: (gf, im, ag, rj) =>
       writeGroupsSnapshot(gf, im, ag, rj),
+    activateAgent: activateAgentByFolder,
     onTasksChanged: () => {
       const tasks = getAllTasks();
       const taskRows = tasks.map((t) => ({

@@ -345,6 +345,64 @@ For shared-group (Teyvat LLC) agents, use a virtual JID: "virtual:telegram_{fold
   },
 );
 
+server.tool(
+  'send_to_agent',
+  `Send a message to another agent's input queue. The message is delivered immediately if the target is running, or picked up on their next activation.
+
+Use this for inter-agent coordination: assigning sub-tasks, sharing research findings, requesting analysis from a specialist.
+
+The target agent sees the message as a new user turn with a [From: ...] header so they know it came from you, not a human.`,
+  {
+    target_folder: z.string().describe('Folder name of the target agent (e.g., "telegram_columbina", "telegram_sandrone")'),
+    text: z.string().describe('The message to send'),
+    sender: z.string().optional().describe('Your name for context (e.g., "Arlecchino"). Included in the message header so the target knows who sent it.'),
+  },
+  async (args) => {
+    const data = {
+      type: 'send_to_agent',
+      targetFolder: args.target_folder,
+      text: args.text,
+      sender: args.sender,
+      sourceFolder: groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: `Message queued for ${args.target_folder}.` }],
+    };
+  },
+);
+
+server.tool(
+  'update_agent_token',
+  `Register a Telegram bot token for an agent. Call this after creating a bot via BotFather.
+
+The host will patch the agent's database entry with the token and connect it to the shared Telegram group (Teyvat LLC). The agent will be able to send and receive messages after the next service restart.
+
+Only callable by admin agents (Alhaitham).`,
+  {
+    folder: z.string().describe('Agent folder name (e.g. "telegram_neuvillette")'),
+    token: z.string().describe('Telegram bot token from BotFather (e.g. "1234567890:AABBcc...")'),
+  },
+  async (args) => {
+    if (!isAdmin) {
+      return { content: [{ type: 'text' as const, text: 'Permission denied: update_agent_token requires admin privilege.' }] };
+    }
+    const data = {
+      type: 'update_agent_token',
+      folder: args.folder,
+      token: args.token,
+      timestamp: new Date().toISOString(),
+    };
+    writeIpcFile(TASKS_DIR, data);
+    return {
+      content: [{ type: 'text' as const, text: `Token queued for ${args.folder}. Host will patch the DB on next IPC cycle.` }],
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

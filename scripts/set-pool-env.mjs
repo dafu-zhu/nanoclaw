@@ -20,14 +20,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 // Must match create-bots.mjs order
+// Only agents that need Telegram bots (leads + solos).
+// Study partners and sub-team members use send_to_agent only.
 const BOT_ORDER = [
   'Skirk', 'Nahida', 'Zhongli', 'Raiden', 'Alhaitham',
-  'Tighnari', 'Collei',
-  'Navia', 'Chevreuse',
-  'Diluc', 'Kaeya',
-  'Xiao', 'Mountain Shaper',
-  'Arlecchino', 'Columbina', 'Il Capitano', 'Pantalone', 'Tartaglia', 'Sandrone',
-  'Keqing', 'Yanfei', 'Xingqiu', 'Ningguang', 'Hu Tao', 'Ganyu',
+  'Tighnari', 'Navia', 'Diluc', 'Xiao',
+  'Arlecchino', 'Keqing', 'Neuvillette',
 ];
 
 function loadJson(file) {

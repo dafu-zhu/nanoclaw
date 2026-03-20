@@ -33,6 +33,9 @@ export interface ContainerConfig {
   poolBotToken?: string; // Dedicated Telegram bot token for this group's agent identity
   isAdmin?: boolean; // Grants register_group privilege (same as main, minus isMain flag)
   mountAllGroups?: boolean; // Mount all group folders read-only under /workspace/extra/{folder}/
+  writeAllGroups?: boolean; // Mount all group folders read-write (for orchestrators like Alhaitham that need to write agent CLAUDE.md files)
+  model?: string; // Override model for this agent (e.g. 'claude-opus-4-6'). Defaults to NANOCLAW_MODEL env or claude-sonnet-4-6
+  injectEnv?: string[]; // Host env var names to pass through into the container (values read from host process.env)
 }
 
 export interface RegisteredGroup {
