@@ -231,7 +231,17 @@ export async function processTaskIpc(
       ) {
         // Resolve the target group from JID
         const targetJid = data.targetJid as string;
-        const targetGroupEntry = registeredGroups[targetJid];
+        let targetGroupEntry = registeredGroups[targetJid];
+
+        // Fallback: virtual agents get the sharedGroupJid as their chatJid,
+        // which isn't a key in registeredGroups. Find the group whose
+        // sharedGroupJid matches and whose folder matches the source group.
+        if (!targetGroupEntry) {
+          const byShared = Object.values(registeredGroups).find(
+            (g) => g.sharedGroupJid === targetJid && g.folder === sourceGroup,
+          );
+          if (byShared) targetGroupEntry = byShared;
+        }
 
         if (!targetGroupEntry) {
           logger.warn(

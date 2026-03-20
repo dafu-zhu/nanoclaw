@@ -1066,14 +1066,35 @@ async function main(): Promise<void> {
     queue,
     onProcess: (groupJid, proc, containerName, groupFolder) =>
       queue.registerProcess(groupJid, proc, containerName, groupFolder),
-    sendMessage: async (jid, rawText) => {
+    sendMessage: async (jid, rawText, groupFolder) => {
       const channel = findChannel(channels, jid);
       if (!channel) {
         logger.warn({ jid }, 'No channel owns JID, cannot send message');
         return;
       }
       const text = formatOutbound(rawText);
-      if (text) await channel.sendMessage(jid, text);
+      if (!text) return;
+      // Use pool bot for virtual/shared-group agents so the message
+      // appears under the agent's name rather than the main bot.
+      if (groupFolder) {
+        const group = Object.values(registeredGroups).find(
+          (g) => g.folder === groupFolder,
+        );
+        const poolBotToken = group?.containerConfig?.poolBotToken;
+        if (poolBotToken && group?.sharedGroupJid) {
+          const fallback = (j: string, t: string) => channel.sendMessage(j, t);
+          await sendPoolMessage(
+            jid,
+            text,
+            group.name,
+            group.folder,
+            fallback,
+            poolBotToken,
+          );
+          return;
+        }
+      }
+      await channel.sendMessage(jid, text);
     },
   });
   if (TELEGRAM_BOT_POOL.length > 0) {
