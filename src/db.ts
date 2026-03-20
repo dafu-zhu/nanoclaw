@@ -616,18 +616,24 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
   );
 }
 
-export function patchAgentToken(folder: string, token: string, sharedGroupJid: string): boolean {
-  const row = db.prepare('SELECT jid, container_config FROM registered_groups WHERE folder = ?').get(folder) as
+export function patchAgentToken(
+  folder: string,
+  token: string,
+  sharedGroupJid: string,
+): boolean {
+  const row = db
+    .prepare(
+      'SELECT jid, container_config FROM registered_groups WHERE folder = ?',
+    )
+    .get(folder) as
     | { jid: string; container_config: string | null }
     | undefined;
   if (!row) return false;
   const cc = row.container_config ? JSON.parse(row.container_config) : {};
   cc.poolBotToken = token;
-  db.prepare('UPDATE registered_groups SET container_config = ?, shared_group_jid = ? WHERE folder = ?').run(
-    JSON.stringify(cc),
-    sharedGroupJid,
-    folder,
-  );
+  db.prepare(
+    'UPDATE registered_groups SET container_config = ?, shared_group_jid = ? WHERE folder = ?',
+  ).run(JSON.stringify(cc), sharedGroupJid, folder);
   return true;
 }
 

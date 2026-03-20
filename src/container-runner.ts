@@ -223,7 +223,10 @@ function buildVolumeMounts(
   // Mount all agent group folders under /workspace/extra/{folder}/
   // mountAllGroups = read-only (e.g. Nahida for visibility)
   // writeAllGroups = read-write (e.g. Alhaitham for writing agent CLAUDE.md files)
-  if (group.containerConfig?.mountAllGroups || group.containerConfig?.writeAllGroups) {
+  if (
+    group.containerConfig?.mountAllGroups ||
+    group.containerConfig?.writeAllGroups
+  ) {
     const writable = !!group.containerConfig?.writeAllGroups;
     const entries = fs.readdirSync(GROUPS_DIR, { withFileTypes: true });
     for (const entry of entries) {
@@ -282,7 +285,11 @@ function buildContainerArgs(
   if (isAdmin) {
     args.push('-e', 'NANOCLAW_IS_ADMIN=1');
     // Pass Telegram API credentials so admin agents can run bot creation scripts
-    for (const key of ['TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_PHONE']) {
+    for (const key of [
+      'TELEGRAM_API_ID',
+      'TELEGRAM_API_HASH',
+      'TELEGRAM_PHONE',
+    ]) {
       if (process.env[key]) args.push('-e', `${key}=${process.env[key]}`);
     }
   }

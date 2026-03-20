@@ -385,6 +385,8 @@ Only callable by admin agents (Alhaitham).`,
   {
     folder: z.string().describe('Agent folder name (e.g. "telegram_neuvillette")'),
     token: z.string().describe('Telegram bot token from BotFather (e.g. "1234567890:AABBcc...")'),
+    enka_key: z.string().optional().describe('Enka.network character icon key (e.g. "Neuvillette", "Alhatham", "Shougun"). When provided, the host auto-sets the bot profile photo. Find in character-database.md under each character entry.'),
+    rarity: z.enum(['4', '5']).optional().describe('Character rarity for avatar background color. Default: "5" (gold).'),
   },
   async (args) => {
     if (!isAdmin) {
@@ -394,11 +396,13 @@ Only callable by admin agents (Alhaitham).`,
       type: 'update_agent_token',
       folder: args.folder,
       token: args.token,
+      enka_key: args.enka_key,
+      rarity: args.rarity ?? '5',
       timestamp: new Date().toISOString(),
     };
     writeIpcFile(TASKS_DIR, data);
     return {
-      content: [{ type: 'text' as const, text: `Token queued for ${args.folder}. Host will patch the DB on next IPC cycle.` }],
+      content: [{ type: 'text' as const, text: `Token queued for ${args.folder}. Host will patch the DB${args.enka_key ? ' and set the profile photo' : ''} on next IPC cycle.` }],
     };
   },
 );

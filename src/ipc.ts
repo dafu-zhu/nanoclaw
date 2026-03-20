@@ -1,3 +1,4 @@
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -5,7 +6,13 @@ import { CronExpressionParser } from 'cron-parser';
 
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, patchAgentToken, updateTask } from './db.js';
+import {
+  createTask,
+  deleteTask,
+  getTaskById,
+  patchAgentToken,
+  updateTask,
+} from './db.js';
 import { isValidGroupFolder, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
@@ -499,50 +506,75 @@ export async function processTaskIpc(
         break;
       }
       if (!isValidGroupFolder(targetFolder)) {
-        logger.warn({ sourceGroup, targetFolder }, 'send_to_agent: invalid target folder');
+        logger.warn(
+          { sourceGroup, targetFolder },
+          'send_to_agent: invalid target folder',
+        );
         break;
       }
       const targetRegistered = Object.values(registeredGroups).find(
         (g) => g.folder === targetFolder,
       );
       if (!targetRegistered) {
-        logger.warn({ sourceGroup, targetFolder }, 'send_to_agent: target not registered');
+        logger.warn(
+          { sourceGroup, targetFolder },
+          'send_to_agent: target not registered',
+        );
         break;
       }
-      const targetInputDir = path.join(resolveGroupIpcPath(targetFolder), 'input');
+      const targetInputDir = path.join(
+        resolveGroupIpcPath(targetFolder),
+        'input',
+      );
       fs.mkdirSync(targetInputDir, { recursive: true });
       const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
       const filepath = path.join(targetInputDir, filename);
-      const fromLabel = data.sender ? `${data.sender} (${sourceGroup})` : sourceGroup;
+      const fromLabel = data.sender
+        ? `${data.sender} (${sourceGroup})`
+        : sourceGroup;
       const tempPath = `${filepath}.tmp`;
       fs.writeFileSync(
         tempPath,
-        JSON.stringify({ type: 'message', text: `[From ${fromLabel}]\n${text}` }, null, 2),
+        JSON.stringify(
+          { type: 'message', text: `[From ${fromLabel}]\n${text}` },
+          null,
+          2,
+        ),
       );
       fs.renameSync(tempPath, filepath);
-      logger.info({ sourceGroup, targetFolder, filename }, 'Agent-to-agent message delivered');
+      logger.info(
+        { sourceGroup, targetFolder, filename },
+        'Agent-to-agent message delivered',
+      );
 
       // Mirror the message to the source agent's Telegram chat so the user can observe
       const sourceRegistered = Object.values(registeredGroups).find(
         (g) => g.folder === sourceGroup,
       );
       if (sourceRegistered) {
-        const sourceChatJid = sourceRegistered.sharedGroupJid ?? Object.keys(registeredGroups).find(
-          (jid) => registeredGroups[jid].folder === sourceGroup,
-        );
+        const sourceChatJid =
+          sourceRegistered.sharedGroupJid ??
+          Object.keys(registeredGroups).find(
+            (jid) => registeredGroups[jid].folder === sourceGroup,
+          );
         if (sourceChatJid) {
           const senderLabel = data.sender || sourceGroup;
           const targetName = targetRegistered.name;
           const mirrorText = `[${senderLabel} → ${targetName}]\n${text}`;
-          deps.sendMessage(
-            sourceChatJid,
-            mirrorText,
-            data.sender,
-            sourceGroup,
-            sourceRegistered.containerConfig?.poolBotToken,
-          ).catch((err) =>
-            logger.warn({ sourceGroup, err }, 'Failed to mirror inter-agent message'),
-          );
+          deps
+            .sendMessage(
+              sourceChatJid,
+              mirrorText,
+              data.sender,
+              sourceGroup,
+              sourceRegistered.containerConfig?.poolBotToken,
+            )
+            .catch((err) =>
+              logger.warn(
+                { sourceGroup, err },
+                'Failed to mirror inter-agent message',
+              ),
+            );
         }
       }
 
@@ -552,7 +584,12 @@ export async function processTaskIpc(
     }
 
     case 'update_agent_token': {
-      const { folder, token } = data as { folder?: string; token?: string };
+      const { folder, token, enka_key: enkaKey, rarity = '5' } = data as {
+        folder?: string;
+        token?: string;
+        enka_key?: string;
+        rarity?: string;
+      };
       if (!folder || !token) {
         logger.warn({ data }, 'update_agent_token: missing folder or token');
         break;
@@ -572,14 +609,49 @@ export async function processTaskIpc(
       const patched = patchAgentToken(folder, token, sharedGroupJid);
       if (patched) {
         logger.info({ folder }, 'update_agent_token: token patched');
-        // Notify Alhaitham
-        const sourceRegistered = Object.values(registeredGroups).find((g) => g.folder === sourceGroup);
-        if (sourceRegistered) {
-          const chatJid = sourceRegistered.sharedGroupJid ?? Object.keys(registeredGroups).find(
-            (jid) => registeredGroups[jid].folder === sourceGroup,
+
+        const characterName = folder.startsWith('telegram_')
+          ? folder.slice('telegram_'.length)
+          : folder;
+
+        // Auto-set bot profile photo if enka_key provided
+        if (enkaKey) {
+          const scriptPath = path.join(process.cwd(), 'scripts', 'set-bot-photos.sh');
+          logger.info({ folder, enkaKey }, 'update_agent_token: setting profile photo');
+          const photoProc = spawn('bash', [scriptPath, '--direct', token, characterName, enkaKey, rarity], {
+            detached: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+          photoProc.stdout?.on('data', (d: Buffer) =>
+            logger.debug({ folder }, `set-bot-photos: ${d.toString().trim()}`),
           );
+          photoProc.stderr?.on('data', (d: Buffer) =>
+            logger.warn({ folder }, `set-bot-photos: ${d.toString().trim()}`),
+          );
+          photoProc.unref();
+        }
+
+        // Notify Alhaitham
+        const sourceRegistered = Object.values(registeredGroups).find(
+          (g) => g.folder === sourceGroup,
+        );
+        if (sourceRegistered) {
+          const chatJid =
+            sourceRegistered.sharedGroupJid ??
+            Object.keys(registeredGroups).find(
+              (jid) => registeredGroups[jid].folder === sourceGroup,
+            );
           if (chatJid) {
-            deps.sendMessage(chatJid, `✓ Token registered for ${folder}. Add @${folder.replace('telegram_', 'nanoclaw_')}_bot to Teyvat LLC, then restart nanoclaw.`, undefined, sourceGroup, sourceRegistered.containerConfig?.poolBotToken).catch(() => {});
+            const photoNote = enkaKey ? ' Avatar set automatically.' : ' Run `bash scripts/set-bot-photos.sh` to set the avatar.';
+            deps
+              .sendMessage(
+                chatJid,
+                `✓ Token registered for ${folder}.${photoNote} Add @nanoclaw_${characterName}_bot to Teyvat LLC, then restart nanoclaw.`,
+                undefined,
+                sourceGroup,
+                sourceRegistered.containerConfig?.poolBotToken,
+              )
+              .catch(() => {});
           }
         }
       } else {

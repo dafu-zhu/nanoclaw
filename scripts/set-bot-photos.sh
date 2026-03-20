@@ -130,6 +130,19 @@ _set_photo() {
   fi
 }
 
+# --- Direct single-bot mode: --direct TOKEN NAME ENKA_KEY [RARITY] ---
+# Must appear after function definitions.
+if [ "${FILTER:-}" = "--direct" ]; then
+  token="${2:-}" name="${3:-}" enka_key="${4:-}" rarity="${5:-5}"
+  if [ -z "$token" ] || [ -z "$name" ] || [ -z "$enka_key" ]; then
+    echo "Usage: $0 --direct TOKEN NAME ENKA_KEY [RARITY]" >&2
+    exit 1
+  fi
+  echo "[$name] (direct mode)"
+  process_bot "$token" "$name" "-" "$enka_key" "-" "$rarity"
+  exit $?
+fi
+
 # --- Main ---
 
 echo "[$(date '+%H:%M:%S')] Setting bot profile photos..."

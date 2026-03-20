@@ -124,6 +124,19 @@ export class GroupQueue {
         { groupJid, taskId, activeCount: this.activeCount },
         'At concurrency limit, task queued',
       );
+      // Preempt any idle-waiting container from a different group to free a slot.
+      // Idle containers have finished their work and are just waiting for follow-ups;
+      // yielding the slot to a scheduled task is the right priority.
+      for (const [otherJid, otherState] of this.groups) {
+        if (otherJid !== groupJid && otherState.idleWaiting && otherState.active) {
+          logger.debug(
+            { preempted: otherJid, groupJid, taskId },
+            'Preempting idle container to free slot for queued task',
+          );
+          this.closeStdin(otherJid);
+          break;
+        }
+      }
       return;
     }
 

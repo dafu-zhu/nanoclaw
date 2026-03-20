@@ -437,15 +437,20 @@ export class TelegramChannel implements Channel {
       const caption = ctx.message.caption || '';
       const isGroup =
         ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
 
       let content = caption
         ? `[${typeLabel}: ${typeLabel.toLowerCase()}.${ext}] ${caption}`
         : `[${typeLabel}]`;
 
       try {
-        const fileId =
-          ctx.message.voice?.file_id ?? ctx.message.audio?.file_id;
+        const fileId = ctx.message.voice?.file_id ?? ctx.message.audio?.file_id;
         const file = await ctx.api.getFile(fileId);
         if (file.file_path) {
           const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
@@ -520,33 +525,33 @@ export class TelegramChannel implements Channel {
       const name = doc?.file_name || 'file';
       const mimeType = doc?.mime_type || '';
       const isPdf =
-        mimeType === 'application/pdf' ||
-        name.toLowerCase().endsWith('.pdf');
+        mimeType === 'application/pdf' || name.toLowerCase().endsWith('.pdf');
 
       // Determine a short type label for the message
       const typeLabel = isPdf
         ? 'PDF'
         : name.toLowerCase().endsWith('.docx') ||
-          mimeType.includes('wordprocessingml')
-        ? 'DOCX'
-        : name.toLowerCase().endsWith('.doc') ||
-          mimeType === 'application/msword'
-        ? 'DOC'
-        : name.toLowerCase().endsWith('.xlsx') ||
-          mimeType.includes('spreadsheetml')
-        ? 'XLSX'
-        : name.toLowerCase().endsWith('.xls') ||
-          mimeType.includes('ms-excel')
-        ? 'XLS'
-        : name.toLowerCase().endsWith('.pptx') ||
-          mimeType.includes('presentationml')
-        ? 'PPTX'
-        : name.toLowerCase().endsWith('.csv') || mimeType === 'text/csv'
-        ? 'CSV'
-        : name.toLowerCase().endsWith('.txt') ||
-          mimeType.startsWith('text/')
-        ? 'TXT'
-        : 'Document';
+            mimeType.includes('wordprocessingml')
+          ? 'DOCX'
+          : name.toLowerCase().endsWith('.doc') ||
+              mimeType === 'application/msword'
+            ? 'DOC'
+            : name.toLowerCase().endsWith('.xlsx') ||
+                mimeType.includes('spreadsheetml')
+              ? 'XLSX'
+              : name.toLowerCase().endsWith('.xls') ||
+                  mimeType.includes('ms-excel')
+                ? 'XLS'
+                : name.toLowerCase().endsWith('.pptx') ||
+                    mimeType.includes('presentationml')
+                  ? 'PPTX'
+                  : name.toLowerCase().endsWith('.csv') ||
+                      mimeType === 'text/csv'
+                    ? 'CSV'
+                    : name.toLowerCase().endsWith('.txt') ||
+                        mimeType.startsWith('text/')
+                      ? 'TXT'
+                      : 'Document';
 
       // Download all document types to the group attachments folder
       const chatJid = `tg:${ctx.chat.id}`;

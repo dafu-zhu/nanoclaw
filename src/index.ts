@@ -423,8 +423,16 @@ async function processSharedAgentMessages(vJid: string): Promise<boolean> {
         if (text) {
           const poolBotToken = agentGroup.containerConfig?.poolBotToken;
           if (poolBotToken) {
-            const fallback = (j: string, t: string) => channel.sendMessage(j, t);
-            await sendPoolMessage(physicalJid, text, agentGroup.name, agentGroup.folder, fallback, poolBotToken);
+            const fallback = (j: string, t: string) =>
+              channel.sendMessage(j, t);
+            await sendPoolMessage(
+              physicalJid,
+              text,
+              agentGroup.name,
+              agentGroup.folder,
+              fallback,
+              poolBotToken,
+            );
           } else if (!vJid.startsWith('virtual:')) {
             // Non-virtual agent (direct JID) — send via main bot
             await channel.sendMessage(physicalJid, text);
@@ -838,14 +846,20 @@ function activateAgentByFolder(folder: string): void {
     ([_, g]) => g.folder === folder,
   );
   if (!entry) {
-    logger.warn({ folder }, 'activateAgent: folder not found in registered groups');
+    logger.warn(
+      { folder },
+      'activateAgent: folder not found in registered groups',
+    );
     return;
   }
   const [jid, group] = entry;
 
   // If active, pollIpcDuringQuery (500ms poll) handles it automatically
   if (queue.isActive(jid)) {
-    logger.debug({ folder, jid }, 'Agent active, inter-agent message will be polled');
+    logger.debug(
+      { folder, jid },
+      'Agent active, inter-agent message will be polled',
+    );
     return;
   }
 
@@ -873,12 +887,22 @@ function activateAgentByFolder(folder: string): void {
             typeof result.result === 'string'
               ? result.result
               : JSON.stringify(result.result);
-          const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+          const text = raw
+            .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+            .trim();
           if (text && channel) {
             const poolBotToken = group.containerConfig?.poolBotToken;
             if (poolBotToken && jid.startsWith('virtual:')) {
-              const fallback = (j: string, t: string) => channel.sendMessage(j, t);
-              await sendPoolMessage(chatJid, text, group.name, group.folder, fallback, poolBotToken);
+              const fallback = (j: string, t: string) =>
+                channel.sendMessage(j, t);
+              await sendPoolMessage(
+                chatJid,
+                text,
+                group.name,
+                group.folder,
+                fallback,
+                poolBotToken,
+              );
             } else if (!jid.startsWith('virtual:')) {
               // Non-virtual agent — send via main bot
               await channel.sendMessage(chatJid, text);
