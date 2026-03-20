@@ -404,16 +404,38 @@ export class TelegramChannel implements Channel {
           const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
           const buffer = await downloadFileBuffer(url);
 
-          // Find the group folder to store attachment
-          const targetGroup =
-            group ??
-            Object.values(this.opts.registeredGroups()).find(
-              (g) => g.sharedGroupJid === chatJid,
+          // For shared groups, save to ALL matching agents' folders so
+          // any dispatched agent finds the file at /workspace/group/attachments/
+          const targetGroups = group
+            ? [group]
+            : Object.values(this.opts.registeredGroups()).filter(
+                (g) => g.sharedGroupJid === chatJid,
+              );
+          if (targetGroups.length > 0) {
+            const processed = await processImage(
+              buffer,
+              resolveGroupFolderPath(targetGroups[0].folder),
+              caption,
             );
-          if (targetGroup) {
-            const groupDir = resolveGroupFolderPath(targetGroup.folder);
-            const processed = await processImage(buffer, groupDir, caption);
-            if (processed) content = processed.content;
+            if (processed) {
+              content = processed.content;
+              // Copy to remaining agents' folders
+              const srcPath = path.join(
+                resolveGroupFolderPath(targetGroups[0].folder),
+                processed.relativePath,
+              );
+              for (let i = 1; i < targetGroups.length; i++) {
+                const destDir = path.join(
+                  resolveGroupFolderPath(targetGroups[i].folder),
+                  'attachments',
+                );
+                fs.mkdirSync(destDir, { recursive: true });
+                fs.copyFileSync(
+                  srcPath,
+                  path.join(destDir, path.basename(processed.relativePath)),
+                );
+              }
+            }
           }
         }
       } catch (err) {
