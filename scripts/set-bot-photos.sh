@@ -3,18 +3,15 @@
 # Uses Telegram Bot API 9.4+ setMyProfilePhoto — fully automatic, no BotFather needed.
 #
 # Image pipeline:
-#   1. Download 1000x2000 portrait card from genshin.jmp.blue (best quality)
-#   2. Crop top 1000x1000 (face/upper body area), convert to JPEG via Node.js/sharp
-#   3. Fall back to 256x256 PNG icon from enka.network if jmp.blue fails
-#   4. custom_url override as last resort
+#   1. enka.network head icon (primary — clean head portrait)
+#   2. custom_url fallback (e.g. yatta.moe for characters not yet on enka)
 #
 # Usage:
 #   ./scripts/set-bot-photos.sh              # Set photos for all configured bots
 #   ./scripts/set-bot-photos.sh nahida       # Set photo for one bot only
 #
 # Adding a new bot: add an entry to BOT_CONFIG below.
-#   Format: "TOKEN|display_name|jmp_slug|enka_key|custom_url"
-#   jmp_slug:   genshin.jmp.blue character slug (e.g. "nahida", "raiden", "al-haitham")
+#   Format: "NAME|display_name|enka_key|custom_url|rarity"
 #   enka_key:   enka.network icon key (e.g. "Nahida", "Zhongli", "Shougun")
 #   custom_url: direct image URL override (use "-" if none)
 
@@ -25,36 +22,36 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TMPDIR_PHOTOS=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_PHOTOS"' EXIT
 
-# --- Load tokens from .env ---
-SKIRK_TOKEN="" NAHIDA_TOKEN="" ZHONGLI_TOKEN="" RAIDEN_TOKEN="" ALHAITHAM_TOKEN=""
-ENV_FILE="$PROJECT_DIR/.env"
-if [ -f "$ENV_FILE" ]; then
-  POOL_TOKENS=$(grep '^TELEGRAM_BOT_POOL=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
-  IFS=',' read -r SKIRK_TOKEN NAHIDA_TOKEN ZHONGLI_TOKEN RAIDEN_TOKEN ALHAITHAM_TOKEN _ \
-    <<< "$POOL_TOKENS"
+# --- Load all tokens from bot-tokens.json in one python3 call ---
+TOKENS_FILE="$SCRIPT_DIR/bot-tokens.json"
+declare -A BOT_TOKENS
+if [ -f "$TOKENS_FILE" ]; then
+  while IFS='=' read -r k v; do
+    BOT_TOKENS["$k"]="$v"
+  done < <(python3 -c "
+import json
+d = json.load(open('$TOKENS_FILE'))
+for k, v in d.items():
+    print(f'{k}={v}')
+" 2>/dev/null)
 fi
 
 # --- Bot configuration ---
-# token|display_name|jmp_slug|enka_key|custom_url|rarity
+# name|display_name|enka_key|custom_url|rarity
+# Add new bots here as they are created. enka_key: UI_AvatarIcon_{key}.png on enka.network
 BOT_CONFIG=(
-  "${SKIRK_TOKEN}|skirk|skirk|SkirkNew|https://gi.yatta.moe/assets/UI/UI_AvatarIcon_SkirkNew.png|5"
-  "${NAHIDA_TOKEN}|nahida|nahida|Nahida|-|5"
-  "${ZHONGLI_TOKEN}|zhongli|zhongli|Zhongli|-|5"
-  "${RAIDEN_TOKEN}|raiden|raiden|Shougun|-|5"
-  "${ALHAITHAM_TOKEN}|alhaitham|alhaitham|Alhatham|-|5"
-  # Future academic agents — add their tokens here when created:
-  # "TOKEN|tighnari|tighnari|Tighnari|-"
-  # "TOKEN|collei|collei|Collei|-"
-  # "TOKEN|navia|navia|Navia|-"
-  # "TOKEN|chevreuse|chevreuse|Chevreuse|-"
-  # "TOKEN|diluc|diluc|Diluc|-"
-  # "TOKEN|kaeya|kaeya|Kaeya|-"
-  # "TOKEN|xiao|xiao|Xiao|-"
-  # "TOKEN|arlecchino|arlecchino|Arlecchino|-"
-  # "TOKEN|tartaglia|tartaglia|Tartaglia|-"
-  # "TOKEN|sandrone|sandrone|Sandrone|-"
-  # "TOKEN|keqing|keqing|Keqing|-"
-  # "TOKEN|ganyu|ganyu|Ganyu|-"
+  "Skirk|skirk|SkirkNew|https://gi.yatta.moe/assets/UI/UI_AvatarIcon_SkirkNew.png|5"
+  "Nahida|nahida|Nahida|-|5"
+  "Zhongli|zhongli|Zhongli|-|5"
+  "Raiden|raiden|Shougun|-|5"
+  "Alhaitham|alhaitham|Alhatham|-|5"
+  "Tighnari|tighnari|Tighnari|-|5"
+  "Navia|navia|Navia|-|5"
+  "Diluc|diluc|Diluc|-|5"
+  "Arlecchino|arlecchino|Arlecchino|-|5"
+  "Keqing|keqing|Keqing|-|5"
+  "Neuvillette|neuvillette|Neuvillette|-|5"
+  "Lisa|lisa|Lisa|-|4"
 )
 
 FILTER="${1:-}"
@@ -69,7 +66,7 @@ convert_image() {
 
 # --- Download and set photo for one bot ---
 process_bot() {
-  local token="$1" name="$2" jmp_slug="$3" enka_key="$4" custom_url="$5" rarity="${6:-5}"
+  local token="$1" name="$2" enka_key="$3" custom_url="$4" rarity="${5:-5}"
   local raw="" http_code info
 
   # 1. enka.network head icon (primary — clean head portrait)
@@ -139,7 +136,7 @@ if [ "${FILTER:-}" = "--direct" ]; then
     exit 1
   fi
   echo "[$name] (direct mode)"
-  process_bot "$token" "$name" "-" "$enka_key" "-" "$rarity"
+  process_bot "$token" "$name" "$enka_key" "-" "$rarity"
   exit $?
 fi
 
@@ -151,8 +148,9 @@ echo ""
 SUCCESS=0 SKIP=0 FAIL=0
 
 for entry in "${BOT_CONFIG[@]}"; do
-  IFS='|' read -r token name jmp_slug enka_key custom_url rarity <<< "$entry"
+  IFS='|' read -r bot_key name enka_key custom_url rarity <<< "$entry"
   rarity="${rarity:-5}"
+  token="${BOT_TOKENS[$bot_key]:-}"
 
   if [ -n "$FILTER" ] && [ "$name" != "$FILTER" ]; then continue; fi
 
@@ -164,7 +162,7 @@ for entry in "${BOT_CONFIG[@]}"; do
   fi
 
   echo "[$name]"
-  if process_bot "$token" "$name" "$jmp_slug" "$enka_key" "$custom_url" "$rarity"; then
+  if process_bot "$token" "$name" "$enka_key" "$custom_url" "$rarity"; then
     SUCCESS=$((SUCCESS + 1))
   else
     FAIL=$((FAIL + 1))

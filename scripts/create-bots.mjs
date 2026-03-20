@@ -52,7 +52,7 @@ const ALL_BOTS = [
   { name: 'Tighnari',   username: 'nanoclaw_tighnari_bot' },   // STAT 31511
   { name: 'Navia',      username: 'nanoclaw_navia_bot' },      // FINM 34700
   { name: 'Diluc',      username: 'nanoclaw_diluc_bot' },      // FINM 32000
-  { name: 'Xiao',       username: 'nanoclaw_xiao_bot' },       // FINM 32700
+  { name: 'Xiao',       username: 'nanoclaw_xiao_uc_bot' },    // FINM 32700 (nanoclaw_xiao_bot taken)
 
   // Research leads only (3)
   { name: 'Arlecchino', username: 'nanoclaw_arlecchino_bot' }, // Fatui — LLM + Alpha

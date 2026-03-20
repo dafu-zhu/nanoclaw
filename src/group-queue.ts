@@ -128,7 +128,11 @@ export class GroupQueue {
       // Idle containers have finished their work and are just waiting for follow-ups;
       // yielding the slot to a scheduled task is the right priority.
       for (const [otherJid, otherState] of this.groups) {
-        if (otherJid !== groupJid && otherState.idleWaiting && otherState.active) {
+        if (
+          otherJid !== groupJid &&
+          otherState.idleWaiting &&
+          otherState.active
+        ) {
           logger.debug(
             { preempted: otherJid, groupJid, taskId },
             'Preempting idle container to free slot for queued task',

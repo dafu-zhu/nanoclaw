@@ -565,7 +565,7 @@ export async function processTaskIpc(
             .sendMessage(
               sourceChatJid,
               mirrorText,
-              data.sender,
+              senderLabel,
               sourceGroup,
               sourceRegistered.containerConfig?.poolBotToken,
             )
@@ -584,7 +584,12 @@ export async function processTaskIpc(
     }
 
     case 'update_agent_token': {
-      const { folder, token, enka_key: enkaKey, rarity = '5' } = data as {
+      const {
+        folder,
+        token,
+        enka_key: enkaKey,
+        rarity = '5',
+      } = data as {
         folder?: string;
         token?: string;
         enka_key?: string;
@@ -616,12 +621,23 @@ export async function processTaskIpc(
 
         // Auto-set bot profile photo if enka_key provided
         if (enkaKey) {
-          const scriptPath = path.join(process.cwd(), 'scripts', 'set-bot-photos.sh');
-          logger.info({ folder, enkaKey }, 'update_agent_token: setting profile photo');
-          const photoProc = spawn('bash', [scriptPath, '--direct', token, characterName, enkaKey, rarity], {
-            detached: true,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
+          const scriptPath = path.join(
+            process.cwd(),
+            'scripts',
+            'set-bot-photos.sh',
+          );
+          logger.info(
+            { folder, enkaKey },
+            'update_agent_token: setting profile photo',
+          );
+          const photoProc = spawn(
+            'bash',
+            [scriptPath, '--direct', token, characterName, enkaKey, rarity],
+            {
+              detached: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            },
+          );
           photoProc.stdout?.on('data', (d: Buffer) =>
             logger.debug({ folder }, `set-bot-photos: ${d.toString().trim()}`),
           );
@@ -642,7 +658,9 @@ export async function processTaskIpc(
               (jid) => registeredGroups[jid].folder === sourceGroup,
             );
           if (chatJid) {
-            const photoNote = enkaKey ? ' Avatar set automatically.' : ' Run `bash scripts/set-bot-photos.sh` to set the avatar.';
+            const photoNote = enkaKey
+              ? ' Avatar set automatically.'
+              : ' Run `bash scripts/set-bot-photos.sh` to set the avatar.';
             deps
               .sendMessage(
                 chatJid,

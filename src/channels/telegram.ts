@@ -385,7 +385,13 @@ export class TelegramChannel implements Channel {
 
       const { timestamp, senderName, caption, isGroup } =
         extractMessageContext(ctx);
-      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
 
       let content = caption ? `[Photo] ${caption}` : '[Photo]';
 
@@ -443,7 +449,13 @@ export class TelegramChannel implements Channel {
 
       const { timestamp, senderName, caption, isGroup } =
         extractMessageContext(ctx);
-      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
 
       let content = caption
         ? `[${typeLabel}: ${typeLabel.toLowerCase()}.${ext}] ${caption}`
@@ -556,7 +568,13 @@ export class TelegramChannel implements Channel {
 
       const { timestamp, senderName, caption, isGroup } =
         extractMessageContext(ctx);
-      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
+      this.opts.onChatMetadata(
+        chatJid,
+        timestamp,
+        undefined,
+        'telegram',
+        isGroup,
+      );
 
       let content = caption
         ? `[${typeLabel}: ${name}] ${caption}`
