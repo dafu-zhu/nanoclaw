@@ -119,6 +119,18 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
+  // Add agent_trigger and shared_group_jid columns (TD-002: per-agent @mention routing)
+  try {
+    database.exec(
+      `ALTER TABLE registered_groups ADD COLUMN agent_trigger TEXT`,
+    );
+    database.exec(
+      `ALTER TABLE registered_groups ADD COLUMN shared_group_jid TEXT`,
+    );
+  } catch {
+    /* columns already exist */
+  }
+
   // Add channel and is_group columns if they don't exist (migration for existing DBs)
   try {
     database.exec(`ALTER TABLE chats ADD COLUMN channel TEXT`);
@@ -554,6 +566,8 @@ export function getRegisteredGroup(
         container_config: string | null;
         requires_trigger: number | null;
         is_main: number | null;
+        agent_trigger: string | null;
+        shared_group_jid: string | null;
       }
     | undefined;
   if (!row) return undefined;
@@ -576,6 +590,8 @@ export function getRegisteredGroup(
     requiresTrigger:
       row.requires_trigger === null ? undefined : row.requires_trigger === 1,
     isMain: row.is_main === 1 ? true : undefined,
+    agentTrigger: row.agent_trigger ?? undefined,
+    sharedGroupJid: row.shared_group_jid ?? undefined,
   };
 }
 
@@ -584,8 +600,8 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     throw new Error(`Invalid group folder "${group.folder}" for JID ${jid}`);
   }
   db.prepare(
-    `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO registered_groups (jid, name, folder, trigger_pattern, added_at, container_config, requires_trigger, is_main, agent_trigger, shared_group_jid)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     jid,
     group.name,
@@ -595,7 +611,46 @@ export function setRegisteredGroup(jid: string, group: RegisteredGroup): void {
     group.containerConfig ? JSON.stringify(group.containerConfig) : null,
     group.requiresTrigger === undefined ? 1 : group.requiresTrigger ? 1 : 0,
     group.isMain ? 1 : 0,
+    group.agentTrigger ?? null,
+    group.sharedGroupJid ?? null,
   );
+}
+
+export function patchAgentToken(
+  folder: string,
+  token: string,
+  sharedGroupJid: string,
+): boolean {
+  const row = db
+    .prepare(
+      'SELECT jid, container_config FROM registered_groups WHERE folder = ?',
+    )
+    .get(folder) as
+    | { jid: string; container_config: string | null }
+    | undefined;
+  if (!row) return false;
+  const cc = row.container_config ? JSON.parse(row.container_config) : {};
+  cc.poolBotToken = token;
+  db.prepare(
+    'UPDATE registered_groups SET container_config = ?, shared_group_jid = ? WHERE folder = ?',
+  ).run(JSON.stringify(cc), sharedGroupJid, folder);
+  return true;
+}
+
+export function patchContainerConfig(
+  folder: string,
+  patch: Partial<NonNullable<RegisteredGroup['containerConfig']>>,
+): boolean {
+  const row = db
+    .prepare('SELECT container_config FROM registered_groups WHERE folder = ?')
+    .get(folder) as { container_config: string | null } | undefined;
+  if (!row) return false;
+  const cc = row.container_config ? JSON.parse(row.container_config) : {};
+  Object.assign(cc, patch);
+  db.prepare(
+    'UPDATE registered_groups SET container_config = ? WHERE folder = ?',
+  ).run(JSON.stringify(cc), folder);
+  return true;
 }
 
 export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
@@ -608,6 +663,8 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
     container_config: string | null;
     requires_trigger: number | null;
     is_main: number | null;
+    agent_trigger: string | null;
+    shared_group_jid: string | null;
   }>;
   const result: Record<string, RegisteredGroup> = {};
   for (const row of rows) {
@@ -629,6 +686,8 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
       requiresTrigger:
         row.requires_trigger === null ? undefined : row.requires_trigger === 1,
       isMain: row.is_main === 1 ? true : undefined,
+      agentTrigger: row.agent_trigger ?? undefined,
+      sharedGroupJid: row.shared_group_jid ?? undefined,
     };
   }
   return result;

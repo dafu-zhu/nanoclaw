@@ -11,41 +11,37 @@ import { logger } from './logger.js';
 /** The container runtime binary name. */
 export const CONTAINER_RUNTIME_BIN = 'docker';
 
+/**
+ * On bare-metal Linux, iptables INPUT chain often blocks container→host traffic,
+ * so we use --network=host instead of bridge networking. The container then uses
+ * localhost to reach the credential proxy.
+ *
+ * macOS/WSL use Docker Desktop (VM-based), where bridge networking works fine.
+ */
+function isBaremetalLinux(): boolean {
+  if (os.platform() !== 'linux') return false;
+  if (fs.existsSync('/proc/sys/fs/binfmt_misc/WSLInterop')) return false;
+  return true;
+}
+
+export const USE_HOST_NETWORK = isBaremetalLinux();
+
 /** Hostname containers use to reach the host machine. */
-export const CONTAINER_HOST_GATEWAY = 'host.docker.internal';
+export const CONTAINER_HOST_GATEWAY = USE_HOST_NETWORK
+  ? 'localhost'
+  : 'host.docker.internal';
 
 /**
  * Address the credential proxy binds to.
- * Docker Desktop (macOS): 127.0.0.1 — the VM routes host.docker.internal to loopback.
- * Docker (Linux): bind to the docker0 bridge IP so only containers can reach it,
- *   falling back to 0.0.0.0 if the interface isn't found.
+ * Docker Desktop (macOS/WSL): 127.0.0.1
+ * Bare-metal Linux with host networking: 127.0.0.1 (container IS the host)
  */
-export const PROXY_BIND_HOST =
-  process.env.CREDENTIAL_PROXY_HOST || detectProxyBindHost();
-
-function detectProxyBindHost(): string {
-  if (os.platform() === 'darwin') return '127.0.0.1';
-
-  // WSL uses Docker Desktop (same VM routing as macOS) — loopback is correct.
-  // Check /proc filesystem, not env vars — WSL_DISTRO_NAME isn't set under systemd.
-  if (fs.existsSync('/proc/sys/fs/binfmt_misc/WSLInterop')) return '127.0.0.1';
-
-  // Bare-metal Linux: bind to the docker0 bridge IP instead of 0.0.0.0
-  const ifaces = os.networkInterfaces();
-  const docker0 = ifaces['docker0'];
-  if (docker0) {
-    const ipv4 = docker0.find((a) => a.family === 'IPv4');
-    if (ipv4) return ipv4.address;
-  }
-  return '0.0.0.0';
-}
+export const PROXY_BIND_HOST = process.env.CREDENTIAL_PROXY_HOST || '127.0.0.1';
 
 /** CLI args needed for the container to resolve the host gateway. */
 export function hostGatewayArgs(): string[] {
-  // On Linux, host.docker.internal isn't built-in — add it explicitly
-  if (os.platform() === 'linux') {
-    return ['--add-host=host.docker.internal:host-gateway'];
-  }
+  // With host networking on Linux, no extra args needed — localhost works directly.
+  // On macOS/WSL, host.docker.internal is built-in (Docker Desktop resolves it).
   return [];
 }
 
@@ -59,7 +55,7 @@ export function readonlyMountArgs(
 
 /** Returns the shell command to stop a container by name. */
 export function stopContainer(name: string): string {
-  return `${CONTAINER_RUNTIME_BIN} stop ${name}`;
+  return `${CONTAINER_RUNTIME_BIN} stop -t 1 ${name}`;
 }
 
 /** Ensure the container runtime is running, starting it if needed. */

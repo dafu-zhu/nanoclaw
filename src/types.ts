@@ -30,6 +30,12 @@ export interface AllowedRoot {
 export interface ContainerConfig {
   additionalMounts?: AdditionalMount[];
   timeout?: number; // Default: 300000 (5 minutes)
+  poolBotToken?: string; // Dedicated Telegram bot token for this group's agent identity
+  isAdmin?: boolean; // Grants register_group privilege (same as main, minus isMain flag)
+  mountAllGroups?: boolean; // Mount all group folders read-only under /workspace/extra/{folder}/
+  writeAllGroups?: boolean; // Mount all group folders read-write (for orchestrators like Alhaitham that need to write agent CLAUDE.md files)
+  model?: string; // Override model for this agent (e.g. 'claude-opus-4-6'). Defaults to NANOCLAW_MODEL env or claude-sonnet-4-6
+  injectEnv?: string[]; // Host env var names to pass through into the container (values read from host process.env)
 }
 
 export interface RegisteredGroup {
@@ -40,6 +46,8 @@ export interface RegisteredGroup {
   containerConfig?: ContainerConfig;
   requiresTrigger?: boolean; // Default: true for groups, false for solo chats
   isMain?: boolean; // True for the main control group (no trigger, elevated privileges)
+  agentTrigger?: string; // @Name this agent responds to in a shared group (e.g. 'Skirk')
+  sharedGroupJid?: string; // Physical JID of the shared group (e.g. Teyvat LLC). Registered under virtual:{folder} key.
 }
 
 export interface NewMessage {

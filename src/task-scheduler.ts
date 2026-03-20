@@ -22,6 +22,28 @@ import { logger } from './logger.js';
 import { RegisteredGroup, ScheduledTask } from './types.js';
 
 /**
+ * Resolve the queue key for a task.  For virtual/shared-group agents the
+ * queue key must be the virtual JID (e.g. "virtual:telegram_nahida"), not
+ * the shared Telegram group JID stored in task.chat_jid.  Falls back to
+ * task.chat_jid when no virtual mapping is found.
+ */
+function resolveQueueKey(
+  task: ScheduledTask,
+  groups: Record<string, RegisteredGroup>,
+): string {
+  // If the chat_jid is already a key in registeredGroups, use it directly
+  if (groups[task.chat_jid]) return task.chat_jid;
+
+  // Otherwise look for a virtual agent whose folder matches and whose
+  // sharedGroupJid equals the stored chat_jid
+  const entry = Object.entries(groups).find(
+    ([, g]) =>
+      g.folder === task.group_folder && g.sharedGroupJid === task.chat_jid,
+  );
+  return entry ? entry[0] : task.chat_jid;
+}
+
+/**
  * Compute the next run time for a recurring task, anchored to the
  * task's scheduled time rather than Date.now() to prevent cumulative
  * drift on interval-based tasks.
@@ -72,7 +94,11 @@ export interface SchedulerDependencies {
     containerName: string,
     groupFolder: string,
   ) => void;
-  sendMessage: (jid: string, text: string) => Promise<void>;
+  sendMessage: (
+    jid: string,
+    text: string,
+    groupFolder?: string,
+  ) => Promise<void>;
 }
 
 async function runTask(
@@ -129,6 +155,9 @@ async function runTask(
     return;
   }
 
+  // For virtual/shared-group agents, use the virtual JID as queue key
+  const queueKey = resolveQueueKey(task, groups);
+
   // Update tasks snapshot for container to read (filtered by group)
   const isMain = group.isMain === true;
   const tasks = getAllTasks();
@@ -164,7 +193,7 @@ async function runTask(
     if (closeTimer) return; // already scheduled
     closeTimer = setTimeout(() => {
       logger.debug({ taskId: task.id }, 'Closing task container after result');
-      deps.queue.closeStdin(task.chat_jid);
+      deps.queue.closeStdin(queueKey);
     }, TASK_CLOSE_DELAY_MS);
   };
 
@@ -181,16 +210,20 @@ async function runTask(
         assistantName: ASSISTANT_NAME,
       },
       (proc, containerName) =>
-        deps.onProcess(task.chat_jid, proc, containerName, task.group_folder),
+        deps.onProcess(queueKey, proc, containerName, task.group_folder),
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;
           // Forward result to user (sendMessage handles formatting)
-          await deps.sendMessage(task.chat_jid, streamedOutput.result);
+          await deps.sendMessage(
+            task.chat_jid,
+            streamedOutput.result,
+            task.group_folder,
+          );
           scheduleClose();
         }
         if (streamedOutput.status === 'success') {
-          deps.queue.notifyIdle(task.chat_jid);
+          deps.queue.notifyIdle(queueKey);
           scheduleClose(); // Close promptly even when result is null (e.g. IPC-only tasks)
         }
         if (streamedOutput.status === 'error') {
@@ -255,6 +288,7 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
         logger.info({ count: dueTasks.length }, 'Found due tasks');
       }
 
+      const groups = deps.registeredGroups();
       for (const task of dueTasks) {
         // Re-check task status in case it was paused/cancelled
         const currentTask = getTaskById(task.id);
@@ -262,7 +296,8 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
           continue;
         }
 
-        deps.queue.enqueueTask(currentTask.chat_jid, currentTask.id, () =>
+        const queueKey = resolveQueueKey(currentTask, groups);
+        deps.queue.enqueueTask(queueKey, currentTask.id, () =>
           runTask(currentTask, deps),
         );
       }

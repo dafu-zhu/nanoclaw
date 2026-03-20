@@ -24,6 +24,21 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     curl \
     git \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python3 + gdown (Google Drive downloader) + Google API client
+RUN apt-get update && apt-get install -y python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --break-system-packages gdown google-api-python-client google-auth
+
+# Install GitHub CLI (gh)
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Chromium path for agent-browser
@@ -32,6 +47,10 @@ ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Install agent-browser and claude-code globally
 RUN npm install -g agent-browser @anthropic-ai/claude-code
+
+# Install pdf-reader skill
+COPY skills/pdf-reader/pdf-reader /usr/local/bin/pdf-reader
+RUN chmod +x /usr/local/bin/pdf-reader
 
 # Create app directory
 WORKDIR /app
@@ -55,7 +74,7 @@ RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/
 # Container input (prompt, group info) is passed via stdin JSON.
 # Credentials are injected by the host's credential proxy — never passed here.
 # Follow-up messages arrive via IPC files in /workspace/ipc/input/
-RUN printf '#!/bin/bash\nset -e\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN printf '#!/bin/bash\nset -e\n# Configure git + gh credentials from GITHUB_TOKEN if provided\nif [ -n "$GITHUB_TOKEN" ]; then\n  git config --global credential.helper store\n  printf "https://x-access-token:%s@github.com\\n" "$GITHUB_TOKEN" > ~/.git-credentials\n  git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "git@github.com:"\nfi\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Set ownership to node user (non-root) for writable directories
 RUN chown -R node:node /workspace && chmod 777 /home/node

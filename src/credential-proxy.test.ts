@@ -11,6 +11,11 @@ vi.mock('./logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
 
+// Prevent readClaudeCredentials() from reading the real ~/.claude/.credentials.json
+vi.mock('os', () => ({
+  default: { homedir: vi.fn(() => '/nonexistent/test/home') },
+}));
+
 import { startCredentialProxy } from './credential-proxy.js';
 
 function makeRequest(

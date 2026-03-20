@@ -19,6 +19,7 @@ const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
 const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const isAdmin = process.env.NANOCLAW_IS_ADMIN === '1';
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -299,24 +300,33 @@ server.tool(
 
 server.tool(
   'register_group',
-  `Register a new chat/group so the agent can respond to messages there. Main group only.
+  `Register a new chat/group so the agent can respond to messages there. Main group and admin agents only.
 
-Use available_groups.json to find the JID for a group. The folder name must be channel-prefixed: "{channel}_{group-name}" (e.g., "whatsapp_family-chat", "telegram_dev-team", "discord_general"). Use lowercase with hyphens for the group name part.`,
+Use available_groups.json to find the JID for a group. The folder name must be channel-prefixed: "{channel}_{group-name}" (e.g., "whatsapp_family-chat", "telegram_dev-team", "discord_general"). Use lowercase with hyphens for the group name part.
+
+For shared-group (Teyvat LLC) agents, use a virtual JID: "virtual:telegram_{folder}" and set agentTrigger and sharedGroupJid.`,
   {
-    jid: z.string().describe('The chat JID (e.g., "120363336345536173@g.us", "tg:-1001234567890", "dc:1234567890123456")'),
+    jid: z.string().describe('The chat JID. For shared-group agents use "virtual:telegram_{folder}" (e.g., "virtual:telegram_tighnari")'),
     name: z.string().describe('Display name for the group'),
-    folder: z.string().describe('Channel-prefixed folder name (e.g., "whatsapp_family-chat", "telegram_dev-team")'),
-    trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
+    folder: z.string().describe('Channel-prefixed folder name (e.g., "telegram_tighnari")'),
+    trigger: z.string().describe('Trigger word (e.g., "@Tighnari")'),
+    agentTrigger: z.string().optional().describe('Character name this agent responds to in a shared group (e.g., "Tighnari"). Required for shared-group agents.'),
+    sharedGroupJid: z.string().optional().describe('Physical JID of the shared group (e.g., "tg:-5244478723"). Required for shared-group agents.'),
+    containerConfig: z.object({
+      poolBotToken: z.string().optional().describe('Dedicated Telegram bot token for this agent\'s identity in the shared group'),
+      model: z.string().optional().describe('Claude model for this agent (e.g. "claude-opus-4-6", "claude-sonnet-4-6"). Defaults to system default (Sonnet 4.6).'),
+      timeout: z.number().optional(),
+    }).optional().describe('Container configuration for this agent'),
   },
   async (args) => {
-    if (!isMain) {
+    if (!isMain && !isAdmin) {
       return {
-        content: [{ type: 'text' as const, text: 'Only the main group can register new groups.' }],
+        content: [{ type: 'text' as const, text: 'Only the main group or admin agents can register new groups.' }],
         isError: true,
       };
     }
 
-    const data = {
+    const data: Record<string, unknown> = {
       type: 'register_group',
       jid: args.jid,
       name: args.name,
@@ -324,11 +334,109 @@ Use available_groups.json to find the JID for a group. The folder name must be c
       trigger: args.trigger,
       timestamp: new Date().toISOString(),
     };
+    if (args.agentTrigger) data.agentTrigger = args.agentTrigger;
+    if (args.sharedGroupJid) data.sharedGroupJid = args.sharedGroupJid;
+    if (args.containerConfig) data.containerConfig = args.containerConfig;
 
     writeIpcFile(TASKS_DIR, data);
 
     return {
       content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
+    };
+  },
+);
+
+server.tool(
+  'set_agent_model',
+  `Set the Claude model for an agent. Main group and admin agents only.
+
+Valid model IDs: "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001".
+Takes effect on the agent's next container start (existing running containers are unaffected).
+
+Use this to assign Opus to research/TA agents and keep Sonnet for planning agents.`,
+  {
+    folder: z.string().describe('Channel-prefixed folder name of the agent to update (e.g., "telegram_tighnari")'),
+    model: z.string().describe('Claude model ID (e.g., "claude-opus-4-6", "claude-sonnet-4-6")'),
+  },
+  async (args) => {
+    if (!isMain && !isAdmin) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group or admin agents can set agent models.' }],
+        isError: true,
+      };
+    }
+
+    writeIpcFile(TASKS_DIR, {
+      type: 'set_agent_model',
+      folder: args.folder,
+      model: args.model,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      content: [{ type: 'text' as const, text: `Model for ${args.folder} will be set to ${args.model}.` }],
+    };
+  },
+);
+
+server.tool(
+  'send_to_agent',
+  `Send a message to another agent's input queue. The message is delivered immediately if the target is running, or picked up on their next activation.
+
+Use this for inter-agent coordination: assigning sub-tasks, sharing research findings, requesting analysis from a specialist.
+
+The target agent sees the message as a new user turn with a [From: ...] header so they know it came from you, not a human.`,
+  {
+    target_folder: z.string().describe('Folder name of the target agent (e.g., "telegram_columbina", "telegram_sandrone")'),
+    text: z.string().describe('The message to send'),
+    sender: z.string().optional().describe('Your name for context (e.g., "Arlecchino"). Included in the message header so the target knows who sent it.'),
+  },
+  async (args) => {
+    const data = {
+      type: 'send_to_agent',
+      targetFolder: args.target_folder,
+      text: args.text,
+      sender: args.sender,
+      sourceFolder: groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: `Message queued for ${args.target_folder}.` }],
+    };
+  },
+);
+
+server.tool(
+  'update_agent_token',
+  `Register a Telegram bot token for an agent. Call this after creating a bot via BotFather.
+
+The host will patch the agent's database entry with the token and connect it to the shared Telegram group (Teyvat LLC). The agent will be able to send and receive messages after the next service restart.
+
+Only callable by admin agents (Alhaitham).`,
+  {
+    folder: z.string().describe('Agent folder name (e.g. "telegram_neuvillette")'),
+    token: z.string().describe('Telegram bot token from BotFather (e.g. "1234567890:AABBcc...")'),
+    enka_key: z.string().optional().describe('Enka.network character icon key (e.g. "Neuvillette", "Alhatham", "Shougun"). When provided, the host auto-sets the bot profile photo. Find in character-database.md under each character entry.'),
+    rarity: z.enum(['4', '5']).optional().describe('Character rarity for avatar background color. Default: "5" (gold).'),
+  },
+  async (args) => {
+    if (!isAdmin) {
+      return { content: [{ type: 'text' as const, text: 'Permission denied: update_agent_token requires admin privilege.' }] };
+    }
+    const data = {
+      type: 'update_agent_token',
+      folder: args.folder,
+      token: args.token,
+      enka_key: args.enka_key,
+      rarity: args.rarity ?? '5',
+      timestamp: new Date().toISOString(),
+    };
+    writeIpcFile(TASKS_DIR, data);
+    return {
+      content: [{ type: 'text' as const, text: `Token queued for ${args.folder}. Host will patch the DB${args.enka_key ? ' and set the profile photo' : ''} on next IPC cycle.` }],
     };
   },
 );

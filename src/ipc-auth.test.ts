@@ -62,6 +62,8 @@ beforeEach(() => {
     syncGroups: async () => {},
     getAvailableGroups: () => [],
     writeGroupsSnapshot: () => {},
+    onTasksChanged: () => {},
+    activateAgent: () => {},
   };
 });
 
@@ -79,6 +81,7 @@ describe('schedule_task authorization', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -99,6 +102,7 @@ describe('schedule_task authorization', () => {
       },
       'other-group',
       false,
+      false,
       deps,
     );
 
@@ -118,6 +122,7 @@ describe('schedule_task authorization', () => {
       },
       'other-group',
       false,
+      false,
       deps,
     );
 
@@ -136,6 +141,7 @@ describe('schedule_task authorization', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -179,6 +185,7 @@ describe('pause_task authorization', () => {
       { type: 'pause_task', taskId: 'task-other' },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
     expect(getTaskById('task-other')!.status).toBe('paused');
@@ -189,6 +196,7 @@ describe('pause_task authorization', () => {
       { type: 'pause_task', taskId: 'task-other' },
       'other-group',
       false,
+      false,
       deps,
     );
     expect(getTaskById('task-other')!.status).toBe('paused');
@@ -198,6 +206,7 @@ describe('pause_task authorization', () => {
     await processTaskIpc(
       { type: 'pause_task', taskId: 'task-main' },
       'other-group',
+      false,
       false,
       deps,
     );
@@ -228,6 +237,7 @@ describe('resume_task authorization', () => {
       { type: 'resume_task', taskId: 'task-paused' },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
     expect(getTaskById('task-paused')!.status).toBe('active');
@@ -238,6 +248,7 @@ describe('resume_task authorization', () => {
       { type: 'resume_task', taskId: 'task-paused' },
       'other-group',
       false,
+      false,
       deps,
     );
     expect(getTaskById('task-paused')!.status).toBe('active');
@@ -247,6 +258,7 @@ describe('resume_task authorization', () => {
     await processTaskIpc(
       { type: 'resume_task', taskId: 'task-paused' },
       'third-group',
+      false,
       false,
       deps,
     );
@@ -275,6 +287,7 @@ describe('cancel_task authorization', () => {
       { type: 'cancel_task', taskId: 'task-to-cancel' },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
     expect(getTaskById('task-to-cancel')).toBeUndefined();
@@ -297,6 +310,7 @@ describe('cancel_task authorization', () => {
     await processTaskIpc(
       { type: 'cancel_task', taskId: 'task-own' },
       'other-group',
+      false,
       false,
       deps,
     );
@@ -321,6 +335,7 @@ describe('cancel_task authorization', () => {
       { type: 'cancel_task', taskId: 'task-foreign' },
       'other-group',
       false,
+      false,
       deps,
     );
     expect(getTaskById('task-foreign')).toBeDefined();
@@ -341,6 +356,7 @@ describe('register_group authorization', () => {
       },
       'other-group',
       false,
+      false,
       deps,
     );
 
@@ -359,6 +375,7 @@ describe('register_group authorization', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -374,6 +391,7 @@ describe('refresh_groups authorization', () => {
     await processTaskIpc(
       { type: 'refresh_groups' },
       'other-group',
+      false,
       false,
       deps,
     );
@@ -449,6 +467,7 @@ describe('schedule_task schedule types', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -473,6 +492,7 @@ describe('schedule_task schedule types', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -492,6 +512,7 @@ describe('schedule_task schedule types', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -515,6 +536,7 @@ describe('schedule_task schedule types', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -532,6 +554,7 @@ describe('schedule_task schedule types', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -549,6 +572,7 @@ describe('schedule_task schedule types', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -571,6 +595,7 @@ describe('schedule_task context_mode', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -590,6 +615,7 @@ describe('schedule_task context_mode', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -609,6 +635,7 @@ describe('schedule_task context_mode', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -627,6 +654,7 @@ describe('schedule_task context_mode', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -649,6 +677,7 @@ describe('register_group success', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 
@@ -670,6 +699,7 @@ describe('register_group success', () => {
       },
       'whatsapp_main',
       true,
+      false,
       deps,
     );
 

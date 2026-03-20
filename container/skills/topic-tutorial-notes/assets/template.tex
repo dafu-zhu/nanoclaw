@@ -1,0 +1,148 @@
+\documentclass[11pt,a4paper]{article}
+
+% === PACKAGES ===
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{bm}
+\usepackage{tikz}
+
+% === COLORS ===
+\definecolor{derivblue}{RGB}{59, 130, 246}
+\definecolor{insightteal}{RGB}{20, 184, 166}
+\definecolor{intuitionamber}{RGB}{245, 158, 11}
+\definecolor{milestoneviolet}{RGB}{139, 92, 246}
+\definecolor{readingrose}{RGB}{244, 63, 94}
+
+% === THEOREM ENVIRONMENTS ===
+\theoremstyle{definition}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+
+% === SIDEBAR ENVIRONMENTS ===
+
+% Derivation: Step-by-step mathematical derivations (Tier 2 content)
+\newtcolorbox{derivation}{
+    blanker,
+    borderline west={3pt}{0pt}{derivblue},
+    left=12pt,
+    before skip=12pt,
+    after skip=12pt,
+    before upper={\textcolor{derivblue}{\textbf{Derivation.}}\enspace}
+}
+
+% Insight: Connecting concepts, practical implications, "aha moment"
+\newtcolorbox{insight}{
+    blanker,
+    borderline west={3pt}{0pt}{insightteal},
+    left=12pt,
+    before skip=12pt,
+    after skip=12pt,
+    before upper={\textcolor{insightteal}{\textbf{Insight.}}\enspace}
+}
+
+% Intuition: High-level proof sketches, "why does this look this way"
+\newtcolorbox{intuition}{
+    blanker,
+    borderline west={3pt}{0pt}{intuitionamber},
+    left=12pt,
+    before skip=12pt,
+    after skip=12pt,
+    before upper={\textcolor{intuitionamber}{\textbf{Intuition.}}\enspace}
+}
+
+% Milestone: Section checkpoints — what the reader should now understand
+\newtcolorbox{milestone}{
+    blanker,
+    borderline west={3pt}{0pt}{milestoneviolet},
+    left=12pt,
+    before skip=12pt,
+    after skip=12pt,
+    before upper={\textcolor{milestoneviolet}{\textbf{Milestone.}}\enspace}
+}
+
+% Reading: External references for Tier 3 content
+\newtcolorbox{reading}{
+    blanker,
+    borderline west={3pt}{0pt}{readingrose},
+    left=12pt,
+    before skip=12pt,
+    after skip=12pt,
+    before upper={\textcolor{readingrose}{\textbf{Further Reading.}}\enspace}
+}
+
+% === DOCUMENT INFO (REPLACE PLACEHOLDERS) ===
+\newcommand{\doctitle}{<<TITLE>>}
+\newcommand{\docsubtitle}{<<SUBTITLE>>}
+\newcommand{\docauthor}{<<AUTHOR>>}
+\newcommand{\headerleft}{<<HEADER_LEFT>>}
+\newcommand{\headerright}{<<HEADER_RIGHT>>}
+
+% === HEADER/FOOTER ===
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\headerleft}
+\rhead{\headerright}
+\rfoot{Page \thepage}
+
+% === COMMON MATH OPERATORS ===
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\C}{\mathbb{C}}
+
+% === TITLE ===
+\title{\textbf{\doctitle} \\ \large \docsubtitle}
+\author{\docauthor}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+% === CONTENT GOES HERE ===
+% Replace <<CONTENT>> with the full document body
+%
+% CONTENT TRIAGE RULES:
+% - Tier 1 (Simple): Explain fully in main text, no box needed
+% - Tier 2 (Medium): Main text for intuition + result, \begin{derivation} for steps
+% - Tier 3 (Complex): Main text for essence, \begin{reading} for references
+%
+% SIDEBAR USAGE:
+% - \begin{derivation}...\end{derivation} — step-by-step math (after intuition)
+% - \begin{insight}...\end{insight} — connecting concepts, practical notes
+% - \begin{intuition}...\end{intuition} — "why this works" explanations
+% - \begin{milestone}...\end{milestone} — end-of-section checkpoints
+% - \begin{reading}...\end{reading} — curated external references (strict citations)
+%
+% STYLE RULES:
+% - Lead with intuition before formulas
+% - Every equation grammatically integrated into a sentence
+% - Define notation on first use
+% - Concrete examples after abstract formulas
+% - Use "we" naturally
+
+<<CONTENT>>
+
+\end{document}
