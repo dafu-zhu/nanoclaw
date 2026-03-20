@@ -423,10 +423,7 @@ export class TelegramChannel implements Channel {
             if (processed) {
               content = processed.content;
               // Copy to remaining agents' folders
-              const srcPath = path.join(
-                firstGroupDir,
-                processed.relativePath,
-              );
+              const srcPath = path.join(firstGroupDir, processed.relativePath);
               const filename = path.basename(processed.relativePath);
               for (let i = 1; i < targetGroups.length; i++) {
                 const destDir = path.join(

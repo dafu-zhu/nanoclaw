@@ -314,6 +314,7 @@ For shared-group (Teyvat LLC) agents, use a virtual JID: "virtual:telegram_{fold
     sharedGroupJid: z.string().optional().describe('Physical JID of the shared group (e.g., "tg:-5244478723"). Required for shared-group agents.'),
     containerConfig: z.object({
       poolBotToken: z.string().optional().describe('Dedicated Telegram bot token for this agent\'s identity in the shared group'),
+      model: z.string().optional().describe('Claude model for this agent (e.g. "claude-opus-4-6", "claude-sonnet-4-6"). Defaults to system default (Sonnet 4.6).'),
       timeout: z.number().optional(),
     }).optional().describe('Container configuration for this agent'),
   },
@@ -341,6 +342,39 @@ For shared-group (Teyvat LLC) agents, use a virtual JID: "virtual:telegram_{fold
 
     return {
       content: [{ type: 'text' as const, text: `Group "${args.name}" registered. It will start receiving messages immediately.` }],
+    };
+  },
+);
+
+server.tool(
+  'set_agent_model',
+  `Set the Claude model for an agent. Main group and admin agents only.
+
+Valid model IDs: "claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001".
+Takes effect on the agent's next container start (existing running containers are unaffected).
+
+Use this to assign Opus to research/TA agents and keep Sonnet for planning agents.`,
+  {
+    folder: z.string().describe('Channel-prefixed folder name of the agent to update (e.g., "telegram_tighnari")'),
+    model: z.string().describe('Claude model ID (e.g., "claude-opus-4-6", "claude-sonnet-4-6")'),
+  },
+  async (args) => {
+    if (!isMain && !isAdmin) {
+      return {
+        content: [{ type: 'text' as const, text: 'Only the main group or admin agents can set agent models.' }],
+        isError: true,
+      };
+    }
+
+    writeIpcFile(TASKS_DIR, {
+      type: 'set_agent_model',
+      folder: args.folder,
+      model: args.model,
+      timestamp: new Date().toISOString(),
+    });
+
+    return {
+      content: [{ type: 'text' as const, text: `Model for ${args.folder} will be set to ${args.model}.` }],
     };
   },
 );

@@ -637,6 +637,22 @@ export function patchAgentToken(
   return true;
 }
 
+export function patchContainerConfig(
+  folder: string,
+  patch: Partial<NonNullable<RegisteredGroup['containerConfig']>>,
+): boolean {
+  const row = db
+    .prepare('SELECT container_config FROM registered_groups WHERE folder = ?')
+    .get(folder) as { container_config: string | null } | undefined;
+  if (!row) return false;
+  const cc = row.container_config ? JSON.parse(row.container_config) : {};
+  Object.assign(cc, patch);
+  db.prepare(
+    'UPDATE registered_groups SET container_config = ? WHERE folder = ?',
+  ).run(JSON.stringify(cc), folder);
+  return true;
+}
+
 export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
   const rows = db.prepare('SELECT * FROM registered_groups').all() as Array<{
     jid: string;

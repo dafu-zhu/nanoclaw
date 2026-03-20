@@ -61,6 +61,7 @@ const ALL_BOTS = [
 
   // Solo agents (additional)
   { name: 'Lisa',       username: 'nanoclaw_lisa_bot' },       // Learning Tracker
+  { name: 'Cyno',       username: 'nanoclaw_cyno_bot' },       // Statistics & Inference Companion
 ];
 
 // ---------------------------------------------------------------------------

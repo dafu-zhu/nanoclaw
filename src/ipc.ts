@@ -11,6 +11,7 @@ import {
   deleteTask,
   getTaskById,
   patchAgentToken,
+  patchContainerConfig,
   updateTask,
 } from './db.js';
 import { isValidGroupFolder, resolveGroupIpcPath } from './group-folder.js';
@@ -547,34 +548,44 @@ export async function processTaskIpc(
         'Agent-to-agent message delivered',
       );
 
-      // Mirror the message to the source agent's Telegram chat so the user can observe
-      const sourceRegistered = Object.values(registeredGroups).find(
-        (g) => g.folder === sourceGroup,
-      );
-      if (sourceRegistered) {
-        const sourceChatJid =
-          sourceRegistered.sharedGroupJid ??
-          Object.keys(registeredGroups).find(
-            (jid) => registeredGroups[jid].folder === sourceGroup,
-          );
-        if (sourceChatJid) {
-          const senderLabel = data.sender || sourceGroup;
-          const targetName = targetRegistered.name;
-          const mirrorText = `[${senderLabel} → ${targetName}]\n${text}`;
-          deps
-            .sendMessage(
-              sourceChatJid,
-              mirrorText,
-              senderLabel,
-              sourceGroup,
-              sourceRegistered.containerConfig?.poolBotToken,
-            )
-            .catch((err) =>
-              logger.warn(
-                { sourceGroup, err },
-                'Failed to mirror inter-agent message',
-              ),
+      // Mirror to source agent's Telegram chat only when the target is a visible
+      // (non-background) agent — i.e. the target has a sharedGroupJid or own jid.
+      // Background sub-agents (no sharedGroupJid, virtual jid) work silently.
+      const targetJid =
+        Object.keys(registeredGroups).find(
+          (jid) => registeredGroups[jid].folder === targetFolder,
+        ) ?? '';
+      const targetIsVisible =
+        !!targetRegistered.sharedGroupJid || !targetJid.startsWith('virtual:');
+      if (targetIsVisible) {
+        const sourceRegistered = Object.values(registeredGroups).find(
+          (g) => g.folder === sourceGroup,
+        );
+        if (sourceRegistered) {
+          const sourceChatJid =
+            sourceRegistered.sharedGroupJid ??
+            Object.keys(registeredGroups).find(
+              (jid) => registeredGroups[jid].folder === sourceGroup,
             );
+          if (sourceChatJid) {
+            const senderLabel = data.sender || sourceGroup;
+            const targetName = targetRegistered.name;
+            const mirrorText = `[${senderLabel} → ${targetName}]\n${text}`;
+            deps
+              .sendMessage(
+                sourceChatJid,
+                mirrorText,
+                senderLabel,
+                sourceGroup,
+                sourceRegistered.containerConfig?.poolBotToken,
+              )
+              .catch((err) =>
+                logger.warn(
+                  { sourceGroup, err },
+                  'Failed to mirror inter-agent message',
+                ),
+              );
+          }
         }
       }
 
@@ -674,6 +685,61 @@ export async function processTaskIpc(
         }
       } else {
         logger.warn({ folder }, 'update_agent_token: folder not found in DB');
+      }
+      break;
+    }
+
+    case 'set_agent_model': {
+      if (!isMain && !isAdmin) {
+        logger.warn(
+          { sourceGroup },
+          'Unauthorized set_agent_model attempt blocked',
+        );
+        break;
+      }
+      const { folder: modelFolder, model } = data as {
+        folder?: string;
+        model?: string;
+      };
+      if (!modelFolder || !model) {
+        logger.warn({ data }, 'set_agent_model: missing folder or model');
+        break;
+      }
+      if (!isValidGroupFolder(modelFolder)) {
+        logger.warn({ modelFolder }, 'set_agent_model: invalid folder name');
+        break;
+      }
+      const patched = patchContainerConfig(modelFolder, { model });
+      if (patched) {
+        logger.info(
+          { folder: modelFolder, model },
+          'set_agent_model: model updated',
+        );
+        // Update in-memory registeredGroups so the next container spawn uses the new model
+        const targetJid = Object.keys(registeredGroups).find(
+          (jid) => registeredGroups[jid].folder === modelFolder,
+        );
+        if (targetJid && registeredGroups[targetJid].containerConfig) {
+          registeredGroups[targetJid].containerConfig!.model = model;
+        } else if (targetJid) {
+          registeredGroups[targetJid].containerConfig = { model };
+        }
+        // Notify the source chat
+        const sourceChatJid = Object.keys(registeredGroups).find(
+          (jid) => registeredGroups[jid].folder === sourceGroup,
+        );
+        if (sourceChatJid) {
+          deps
+            .sendMessage(
+              sourceChatJid,
+              `Model for ${modelFolder} set to ${model}. Takes effect on next container start.`,
+            )
+            .catch((err) =>
+              logger.warn({ err }, 'set_agent_model: notify failed'),
+            );
+        }
+      } else {
+        logger.warn({ modelFolder }, 'set_agent_model: folder not found in DB');
       }
       break;
     }
