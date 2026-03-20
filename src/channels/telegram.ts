@@ -9,6 +9,41 @@ import { processImage } from '../image.js';
 import { resolveGroupFolderPath } from '../group-folder.js';
 import { logger } from '../logger.js';
 
+// --- Module-level helpers ---
+
+/** Download a file from Telegram's CDN into a Buffer. */
+function downloadFileBuffer(url: string): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => resolve(Buffer.concat(chunks)));
+        res.on('error', reject);
+      })
+      .on('error', reject);
+  });
+}
+
+/** Extract common message context fields from a Telegram update ctx. */
+function extractMessageContext(ctx: any): {
+  timestamp: string;
+  senderName: string;
+  caption: string;
+  isGroup: boolean;
+} {
+  return {
+    timestamp: new Date(ctx.message.date * 1000).toISOString(),
+    senderName:
+      ctx.from?.first_name ||
+      ctx.from?.username ||
+      ctx.from?.id?.toString() ||
+      'Unknown',
+    caption: ctx.message.caption || '',
+    isGroup: ctx.chat.type === 'group' || ctx.chat.type === 'supergroup',
+  };
+}
+
 // --- Bot pool for per-agent identities ---
 
 const poolApis: Api[] = [];
@@ -348,22 +383,9 @@ export class TelegramChannel implements Channel {
         );
       if (!group && !isSharedGroupJid) return;
 
-      const timestamp = new Date(ctx.message.date * 1000).toISOString();
-      const senderName =
-        ctx.from?.first_name ||
-        ctx.from?.username ||
-        ctx.from?.id?.toString() ||
-        'Unknown';
-      const caption = ctx.message.caption || '';
-      const isGroup =
-        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      this.opts.onChatMetadata(
-        chatJid,
-        timestamp,
-        undefined,
-        'telegram',
-        isGroup,
-      );
+      const { timestamp, senderName, caption, isGroup } =
+        extractMessageContext(ctx);
+      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
 
       let content = caption ? `[Photo] ${caption}` : '[Photo]';
 
@@ -374,16 +396,7 @@ export class TelegramChannel implements Channel {
         const file = await ctx.api.getFile(photo.file_id);
         if (file.file_path) {
           const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-          const buffer = await new Promise<Buffer>((resolve, reject) => {
-            https
-              .get(url, (res) => {
-                const chunks: Buffer[] = [];
-                res.on('data', (c: Buffer) => chunks.push(c));
-                res.on('end', () => resolve(Buffer.concat(chunks)));
-                res.on('error', reject);
-              })
-              .on('error', reject);
-          });
+          const buffer = await downloadFileBuffer(url);
 
           // Find the group folder to store attachment
           const targetGroup =
@@ -428,22 +441,9 @@ export class TelegramChannel implements Channel {
         );
       if (!group && !isSharedGroupJid) return;
 
-      const timestamp = new Date(ctx.message.date * 1000).toISOString();
-      const senderName =
-        ctx.from?.first_name ||
-        ctx.from?.username ||
-        ctx.from?.id?.toString() ||
-        'Unknown';
-      const caption = ctx.message.caption || '';
-      const isGroup =
-        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      this.opts.onChatMetadata(
-        chatJid,
-        timestamp,
-        undefined,
-        'telegram',
-        isGroup,
-      );
+      const { timestamp, senderName, caption, isGroup } =
+        extractMessageContext(ctx);
+      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
 
       let content = caption
         ? `[${typeLabel}: ${typeLabel.toLowerCase()}.${ext}] ${caption}`
@@ -454,16 +454,7 @@ export class TelegramChannel implements Channel {
         const file = await ctx.api.getFile(fileId);
         if (file.file_path) {
           const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-          const buffer = await new Promise<Buffer>((resolve, reject) => {
-            https
-              .get(url, (res) => {
-                const chunks: Buffer[] = [];
-                res.on('data', (c: Buffer) => chunks.push(c));
-                res.on('end', () => resolve(Buffer.concat(chunks)));
-                res.on('error', reject);
-              })
-              .on('error', reject);
-          });
+          const buffer = await downloadFileBuffer(url);
 
           const targetGroups = group
             ? [group]
@@ -563,22 +554,9 @@ export class TelegramChannel implements Channel {
         );
       if (!group && !isSharedGroupJid) return;
 
-      const timestamp = new Date(ctx.message.date * 1000).toISOString();
-      const senderName =
-        ctx.from?.first_name ||
-        ctx.from?.username ||
-        ctx.from?.id?.toString() ||
-        'Unknown';
-      const caption = ctx.message.caption || '';
-      const isGroup =
-        ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      this.opts.onChatMetadata(
-        chatJid,
-        timestamp,
-        undefined,
-        'telegram',
-        isGroup,
-      );
+      const { timestamp, senderName, caption, isGroup } =
+        extractMessageContext(ctx);
+      this.opts.onChatMetadata(chatJid, timestamp, undefined, 'telegram', isGroup);
 
       let content = caption
         ? `[${typeLabel}: ${name}] ${caption}`
@@ -588,16 +566,7 @@ export class TelegramChannel implements Channel {
         const file = await ctx.api.getFile(doc!.file_id);
         if (file.file_path) {
           const url = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
-          const buffer = await new Promise<Buffer>((resolve, reject) => {
-            https
-              .get(url, (res) => {
-                const chunks: Buffer[] = [];
-                res.on('data', (c: Buffer) => chunks.push(c));
-                res.on('end', () => resolve(Buffer.concat(chunks)));
-                res.on('error', reject);
-              })
-              .on('error', reject);
-          });
+          const buffer = await downloadFileBuffer(url);
 
           // For shared groups, save to ALL matching agents' folders so
           // any dispatched agent finds the file at /workspace/group/attachments/

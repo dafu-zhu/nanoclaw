@@ -328,12 +328,19 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
 // --- TD-002: per-agent @mention routing helpers ---
 
-/** Build a trigger RegExp for a shared-group agent (e.g. 'Skirk' → /^@Skirk\b/i). */
+const triggerPatternCache = new Map<string, RegExp>();
+
+/** Build (and cache) a trigger RegExp for a shared-group agent (e.g. 'Skirk' → /@Skirk\b/i). */
 function makeTriggerPattern(agentName: string): RegExp {
-  return new RegExp(
-    `@${agentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
-    'i',
-  );
+  let pat = triggerPatternCache.get(agentName);
+  if (!pat) {
+    pat = new RegExp(
+      `@${agentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+      'i',
+    );
+    triggerPatternCache.set(agentName, pat);
+  }
+  return pat;
 }
 
 /** Virtual JID for shared-group agents: `virtual:{folder}` */
