@@ -46,17 +46,51 @@ export interface ContainerInput {
   imageAttachments?: Array<{ relativePath: string; mediaType: string }>;
 }
 
+export interface UsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  totalCostUsd: number;
+  durationMs: number;
+  numTurns: number;
+}
+
 export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
   error?: string;
+  usage?: UsageStats;
 }
 
 interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
+}
+
+const USAGE_DIR = path.join(DATA_DIR, 'usage');
+
+function appendUsageLog(folder: string, usage: UsageStats): void {
+  const entry = {
+    ...usage,
+    timestamp: new Date().toISOString(),
+    folder,
+  };
+  const line = JSON.stringify(entry) + '\n';
+
+  try {
+    fs.mkdirSync(USAGE_DIR, { recursive: true });
+    fs.appendFileSync(path.join(USAGE_DIR, `${folder}.jsonl`), line);
+  } catch (err) {
+    logger.warn({ folder, err }, 'Failed to write centralized usage log');
+  }
+
+  try {
+    const groupUsagePath = path.join(GROUPS_DIR, folder, 'usage.jsonl');
+    fs.appendFileSync(groupUsagePath, line);
+  } catch (err) {
+    logger.warn({ folder, err }, 'Failed to write group usage log');
+  }
 }
 
 function buildVolumeMounts(
@@ -306,6 +340,11 @@ function buildContainerArgs(
     }
   }
 
+  // Pass Parallel AI API key if available (all agents get search access)
+  if (process.env.PARALLEL_API_KEY) {
+    args.push('-e', `PARALLEL_API_KEY=${process.env.PARALLEL_API_KEY}`);
+  }
+
   // Per-agent model override
   if (modelOverride) {
     args.push('-e', `NANOCLAW_MODEL=${modelOverride}`);
@@ -450,6 +489,9 @@ export async function runContainerAgent(
             const parsed: ContainerOutput = JSON.parse(jsonStr);
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
+            }
+            if (parsed.usage) {
+              appendUsageLog(group.folder, parsed.usage);
             }
             hadStreamingOutput = true;
             // Activity detected — reset the hard timeout

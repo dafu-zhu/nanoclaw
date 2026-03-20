@@ -70,6 +70,17 @@ Keep messages clean and readable for WhatsApp.
 
 ---
 
+## Token Budget & Dispatch
+
+Dafu is on a limited Claude plan. When dispatching work:
+
+• *Interactive agents (solo, TAs):* Pace to Dafu's requests. Don't proactively trigger expensive work he didn't ask for.
+• *Research teams (Fatui, Liyue):* Route the research question to the team lead (Arlecchino or Keqing). They run autonomously — decompose, delegate, execute, and report findings. Don't micromanage or block on per-step approval.
+• *Batch over broadcast:* Pick the single most relevant agent rather than fanning out to multiple.
+• *Parallel AI deep research:* Quick search is free. Task API needs Dafu's OK.
+
+---
+
 ## Admin Context
 
 This is the **main channel**, which has elevated privileges.

@@ -35,6 +35,13 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalCostUsd: number;
+    durationMs: number;
+    numTurns: number;
+  };
 }
 
 interface SessionEntry {
@@ -441,6 +448,8 @@ async function runQuery(
         'NotebookEdit',
         'mcp__nanoclaw__*',
         'mcp__gmail__*',
+        'mcp__parallel-search__*',
+        'mcp__parallel-task__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -461,6 +470,22 @@ async function runQuery(
           command: 'npx',
           args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
         },
+        ...(process.env.PARALLEL_API_KEY ? {
+          'parallel-search': {
+            type: 'http' as const,
+            url: 'https://search-mcp.parallel.ai/mcp',
+            headers: {
+              'Authorization': `Bearer ${process.env.PARALLEL_API_KEY}`,
+            },
+          },
+          'parallel-task': {
+            type: 'http' as const,
+            url: 'https://task-mcp.parallel.ai/mcp',
+            headers: {
+              'Authorization': `Bearer ${process.env.PARALLEL_API_KEY}`,
+            },
+          },
+        } : {}),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
@@ -487,12 +512,21 @@ async function runQuery(
 
     if (message.type === 'result') {
       resultCount++;
-      const textResult = 'result' in message ? (message as { result?: string }).result : null;
+      const msg = message as Record<string, unknown>;
+      const textResult = typeof msg.result === 'string' ? msg.result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      const usage = msg.usage as { inputTokens?: number; outputTokens?: number } | undefined;
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId
+        newSessionId,
+        usage: usage ? {
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+          totalCostUsd: typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : 0,
+          durationMs: typeof msg.duration_ms === 'number' ? msg.duration_ms : 0,
+          numTurns: typeof msg.num_turns === 'number' ? msg.num_turns : 0,
+        } : undefined,
       });
     }
   }
