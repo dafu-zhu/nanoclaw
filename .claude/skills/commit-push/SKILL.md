@@ -51,9 +51,9 @@ EOF
 
 4. If the commit fails due to pre-commit hook reformatting, stage the reformatted files and create a NEW commit (never amend).
 
-## Step 4: Push
+## Step 4: Push (MANDATORY)
 
-Push to the current branch's remote:
+**ALWAYS push after a successful commit. This step is not optional.** The pipeline is not complete until the push succeeds.
 
 ```bash
 git push
