@@ -4,7 +4,7 @@ import path from 'path';
 
 import { CronExpressionParser } from 'cron-parser';
 
-import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
+import { DATA_DIR, GROUPS_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
 import { AvailableGroup } from './container-runner.js';
 import {
   createTask,
@@ -24,6 +24,12 @@ export interface IpcDeps {
     text: string,
     sender?: string,
     groupFolder?: string,
+    poolBotToken?: string,
+  ) => Promise<void>;
+  sendFile: (
+    jid: string,
+    hostFilePath: string,
+    caption?: string,
     poolBotToken?: string,
   ) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
@@ -126,6 +132,62 @@ export function startIpcWatcher(deps: IpcDeps): void {
                     'Unauthorized IPC message attempt blocked',
                   );
                 }
+              } else if (
+                data.type === 'send_file' &&
+                data.chatJid &&
+                data.filePath
+              ) {
+                // Resolve container path to host path:
+                // /workspace/group/outputs/file.tex → groups/{folder}/outputs/file.tex
+                let hostPath = data.filePath as string;
+                if (hostPath.startsWith('/workspace/group/')) {
+                  hostPath = path.join(
+                    GROUPS_DIR,
+                    sourceGroup,
+                    hostPath.replace('/workspace/group/', ''),
+                  );
+                }
+                if (!fs.existsSync(hostPath)) {
+                  logger.warn(
+                    { hostPath, containerPath: data.filePath, sourceGroup },
+                    'IPC send_file: file not found on host',
+                  );
+                } else {
+                  const targetGroup = registeredGroups[data.chatJid];
+                  const virtualEntry = Object.values(registeredGroups).find(
+                    (g) =>
+                      g.folder === sourceGroup &&
+                      g.sharedGroupJid === data.chatJid,
+                  );
+                  if (
+                    isMain ||
+                    (targetGroup && targetGroup.folder === sourceGroup) ||
+                    virtualEntry
+                  ) {
+                    const poolBotToken =
+                      virtualEntry?.containerConfig?.poolBotToken ??
+                      targetGroup?.containerConfig?.poolBotToken;
+                    await deps.sendFile(
+                      data.chatJid,
+                      hostPath,
+                      data.caption,
+                      poolBotToken,
+                    );
+                    logger.info(
+                      {
+                        chatJid: data.chatJid,
+                        file: path.basename(hostPath),
+                        sourceGroup,
+                      },
+                      'IPC file sent',
+                    );
+                  } else {
+                    logger.warn(
+                      { chatJid: data.chatJid, sourceGroup },
+                      'Unauthorized IPC send_file attempt blocked',
+                    );
+                  }
+                }
               }
               fs.unlinkSync(filePath);
             } catch (err) {
@@ -223,6 +285,17 @@ export async function processTaskIpc(
 
   switch (data.type) {
     case 'schedule_task':
+      logger.info(
+        {
+          sourceGroup,
+          hasPrompt: !!data.prompt,
+          hasType: !!data.schedule_type,
+          hasValue: !!data.schedule_value,
+          hasJid: !!data.targetJid,
+          targetJid: data.targetJid,
+        },
+        'schedule_task IPC received',
+      );
       if (
         data.prompt &&
         data.schedule_type &&
@@ -245,11 +318,15 @@ export async function processTaskIpc(
 
         if (!targetGroupEntry) {
           logger.warn(
-            { targetJid },
-            'Cannot schedule task: target group not registered',
+            { targetJid, sourceGroup },
+            'Cannot schedule task: target group not registered (direct lookup and sharedGroupJid fallback both failed)',
           );
           break;
         }
+        logger.info(
+          { targetJid, resolvedFolder: targetGroupEntry.folder, sourceGroup },
+          'schedule_task target resolved',
+        );
 
         const targetFolder = targetGroupEntry.folder;
 

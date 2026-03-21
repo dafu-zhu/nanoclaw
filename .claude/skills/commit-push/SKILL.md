@@ -1,6 +1,6 @@
 ---
-name: commit
-description: "Review changed code for reuse, quality, and efficiency, then fix any issues found. Run pre-commit hook, simplify code, commit, and push. Use when the user says /commit or asks to commit and push."
+name: commit-push
+description: "Review changed code for reuse, quality, and efficiency, then fix any issues found. Run pre-commit hook, simplify code, commit, and push. Use when the user says /commit-push or asks to commit and push."
 ---
 
 # Commit Skill

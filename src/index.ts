@@ -4,13 +4,18 @@ import path from 'path';
 import {
   ASSISTANT_NAME,
   CREDENTIAL_PROXY_PORT,
+  DATA_DIR,
   IDLE_TIMEOUT,
   POLL_INTERVAL,
   TELEGRAM_BOT_POOL,
   TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
-import { initBotPool, sendPoolMessage } from './channels/telegram.js';
+import {
+  initBotPool,
+  sendPoolDocument,
+  sendPoolMessage,
+} from './channels/telegram.js';
 import { parseImageReferences } from './image.js';
 import { startCredentialProxy } from './credential-proxy.js';
 import './channels/index.js';
@@ -286,6 +291,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       }
 
       if (result.status === 'success') {
+        // Append token usage note after agent delivery
+        if (result.usage && outputSentToUser) {
+          const u = result.usage;
+          const inK = (u.inputTokens / 1000).toFixed(1);
+          const outK = (u.outputTokens / 1000).toFixed(1);
+          const cost = u.totalCostUsd.toFixed(4);
+          await channel.sendMessage(
+            chatJid,
+            `(Tokens: ${inK}K in / ${outK}K out, $${cost})`,
+          );
+        }
         queue.notifyIdle(chatJid);
       }
 
@@ -652,19 +668,35 @@ async function startMessageLoop(): Promise<void> {
               const agentMessages =
                 agentPending.length > 0 ? agentPending : groupMessages;
               const agentFormatted = formatMessages(agentMessages, TIMEZONE);
-              if (queue.sendMessage(vJid, agentFormatted)) {
-                // Active container — pipe follow-up directly (no @ needed)
+              const sendResult = queue.sendMessage(vJid, agentFormatted);
+              if (sendResult) {
+                // Active container — message written to IPC
                 lastAgentTimestamp[vJid] =
                   agentMessages[agentMessages.length - 1].timestamp;
                 saveState();
-                sharedChannel
-                  ?.setTyping?.(chatJid, true)
-                  ?.catch((err) =>
-                    logger.warn(
-                      { chatJid, vJid, err },
-                      'Failed to set typing for shared agent',
-                    ),
-                  );
+                if (sendResult === 'queued') {
+                  // Agent is mid-task — send auto-ack so user knows
+                  const ackText = `_${agentGroup.name} is working on a task. Your message has been queued._`;
+                  if (sharedChannel) {
+                    sharedChannel
+                      .sendMessage(chatJid, ackText)
+                      .catch((err) =>
+                        logger.warn(
+                          { chatJid, vJid, err },
+                          'Failed to send busy ack',
+                        ),
+                      );
+                  }
+                } else {
+                  sharedChannel
+                    ?.setTyping?.(chatJid, true)
+                    ?.catch((err) =>
+                      logger.warn(
+                        { chatJid, vJid, err },
+                        'Failed to set typing for shared agent',
+                      ),
+                    );
+                }
               } else {
                 // No active container — only start if @AgentName present
                 if (thisTriggered) queue.enqueueMessageCheck(vJid);
@@ -734,20 +766,38 @@ async function startMessageLoop(): Promise<void> {
             allPending.length > 0 ? allPending : groupMessages;
           const formatted = formatMessages(messagesToSend, TIMEZONE);
 
-          if (queue.sendMessage(chatJid, formatted)) {
+          const sendResult2 = queue.sendMessage(chatJid, formatted);
+          if (sendResult2) {
             logger.debug(
-              { chatJid, count: messagesToSend.length },
-              'Piped messages to active container',
+              {
+                chatJid,
+                count: messagesToSend.length,
+                sendResult: sendResult2,
+              },
+              'Wrote messages to IPC for active container',
             );
             lastAgentTimestamp[chatJid] =
               messagesToSend[messagesToSend.length - 1].timestamp;
             saveState();
-            // Show typing indicator while the container processes the piped message
-            channel
-              .setTyping?.(chatJid, true)
-              ?.catch((err) =>
-                logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
-              );
+            if (sendResult2 === 'queued') {
+              // Agent is mid-task — send auto-ack
+              const ackText = `_${group.name} is working on a task. Your message has been queued._`;
+              channel
+                .sendMessage(chatJid, ackText)
+                .catch((err) =>
+                  logger.warn({ chatJid, err }, 'Failed to send busy ack'),
+                );
+            } else {
+              // Show typing indicator while the container processes the message
+              channel
+                .setTyping?.(chatJid, true)
+                ?.catch((err) =>
+                  logger.warn(
+                    { chatJid, err },
+                    'Failed to set typing indicator',
+                  ),
+                );
+            }
           } else {
             // No active container — enqueue for a new one
             queue.enqueueMessageCheck(chatJid);
@@ -784,18 +834,31 @@ async function startMessageLoop(): Promise<void> {
               agentPending.length > 0 ? agentPending : groupMessages;
             const agentFormatted = formatMessages(agentMessages, TIMEZONE);
 
-            if (queue.sendMessage(vJid, agentFormatted)) {
+            const sendResult3 = queue.sendMessage(vJid, agentFormatted);
+            if (sendResult3) {
               lastAgentTimestamp[vJid] =
                 agentMessages[agentMessages.length - 1].timestamp;
               saveState();
-              channel
-                .setTyping?.(chatJid, true)
-                ?.catch((err) =>
-                  logger.warn(
-                    { chatJid, vJid, err },
-                    'Failed to set typing indicator for shared agent',
-                  ),
-                );
+              if (sendResult3 === 'queued') {
+                const ackText = `_${agentGroup.name} is working on a task. Your message has been queued._`;
+                channel
+                  .sendMessage(chatJid, ackText)
+                  .catch((err) =>
+                    logger.warn(
+                      { chatJid, vJid, err },
+                      'Failed to send busy ack',
+                    ),
+                  );
+              } else {
+                channel
+                  .setTyping?.(chatJid, true)
+                  ?.catch((err) =>
+                    logger.warn(
+                      { chatJid, vJid, err },
+                      'Failed to set typing indicator for shared agent',
+                    ),
+                  );
+              }
             } else {
               queue.enqueueMessageCheck(vJid);
             }
@@ -836,6 +899,87 @@ function recoverPendingMessages(): void {
       );
       queue.enqueueMessageCheck(jid);
     }
+  }
+}
+
+/**
+ * Scan IPC input directories for orphaned messages left from before a restart.
+ * For each folder with pending .json files, enqueue a message check to spawn
+ * a container. Also clean up stale _close sentinels that would prematurely
+ * terminate freshly spawned containers.
+ */
+function recoverOrphanedIpcMessages(): void {
+  const ipcBaseDir = path.join(DATA_DIR, 'ipc');
+  if (!fs.existsSync(ipcBaseDir)) return;
+
+  let folders: string[];
+  try {
+    folders = fs.readdirSync(ipcBaseDir).filter((f) => {
+      try {
+        return (
+          fs.statSync(path.join(ipcBaseDir, f)).isDirectory() && f !== 'errors'
+        );
+      } catch {
+        return false;
+      }
+    });
+  } catch (err) {
+    logger.warn({ err }, 'IPC orphan scan: could not read IPC base directory');
+    return;
+  }
+
+  let recoveredCount = 0;
+  let closeCleaned = 0;
+
+  for (const folder of folders) {
+    const inputDir = path.join(ipcBaseDir, folder, 'input');
+    if (!fs.existsSync(inputDir)) continue;
+
+    // Clean up stale _close sentinels from killed containers
+    const closePath = path.join(inputDir, '_close');
+    if (fs.existsSync(closePath)) {
+      try {
+        fs.unlinkSync(closePath);
+        closeCleaned++;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Check for orphaned .json messages
+    let hasJsonFiles = false;
+    try {
+      const files = fs.readdirSync(inputDir);
+      hasJsonFiles = files.some((f) => f.endsWith('.json'));
+    } catch {
+      continue;
+    }
+
+    if (!hasJsonFiles) continue;
+
+    // Find the registered group for this folder
+    const entry = Object.entries(registeredGroups).find(
+      ([_, g]) => g.folder === folder,
+    );
+    if (!entry) {
+      logger.debug(
+        { folder },
+        'IPC orphan scan: orphaned messages for unregistered folder, skipping',
+      );
+      continue;
+    }
+
+    const [jid] = entry;
+    logger.info(
+      { folder, jid },
+      'IPC orphan scan: found orphaned messages, enqueuing container spawn',
+    );
+    queue.enqueueMessageCheck(jid);
+    recoveredCount++;
+  }
+
+  if (recoveredCount > 0 || closeCleaned > 0) {
+    logger.info({ recoveredCount, closeCleaned }, 'IPC orphan scan complete');
   }
 }
 
@@ -1115,6 +1259,18 @@ async function main(): Promise<void> {
       }
       return channel.sendMessage(jid, text);
     },
+    sendFile: async (jid, hostFilePath, caption, poolBotToken) => {
+      if (jid.startsWith('tg:')) {
+        return sendPoolDocument(jid, hostFilePath, caption, poolBotToken);
+      }
+      // Non-Telegram channels: fall back to sending file path as text
+      const channel = findChannel(channels, jid);
+      if (!channel) throw new Error(`No channel for JID: ${jid}`);
+      return channel.sendMessage(
+        jid,
+        `[File: ${path.basename(hostFilePath)}]${caption ? ` — ${caption}` : ''}`,
+      );
+    },
     registeredGroups: () => registeredGroups,
     registerGroup,
     syncGroups: async (force: boolean) => {
@@ -1146,6 +1302,7 @@ async function main(): Promise<void> {
   });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
+  recoverOrphanedIpcMessages();
   startMessageLoop().catch((err) => {
     logger.fatal({ err }, 'Message loop crashed unexpectedly');
     process.exit(1);

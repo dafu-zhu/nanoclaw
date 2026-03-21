@@ -72,11 +72,10 @@ Keep messages clean and readable for WhatsApp.
 
 ## Token Budget & Dispatch
 
-Dafu is on a limited Claude plan. When dispatching work:
+All agents run on Claude with tiered models: Haiku (simple agents), Sonnet (TAs, sub-agents), Opus (research leads only).
 
 • *Interactive agents (solo, TAs):* Pace to Dafu's requests. Don't proactively trigger expensive work he didn't ask for.
-• *Research teams (Fatui, Liyue):* Route the research question to the team lead (Arlecchino or Keqing). They run autonomously — decompose, delegate, execute, and report findings. Don't micromanage or block on per-step approval.
-• *Batch over broadcast:* Pick the single most relevant agent rather than fanning out to multiple.
+• *Research teams (Fatui, Liyue, Fontaine):* Route the research question to the team lead (Arlecchino, Keqing, or Neuvillette). They run autonomously — decompose, delegate, execute, and report findings. Multiple teams may run in parallel — this is allowed and expected.
 • *Parallel AI deep research:* Quick search is free. Task API needs Dafu's OK.
 
 ---

@@ -298,6 +298,7 @@ function buildContainerArgs(
   isAdmin?: boolean,
   modelOverride?: string,
   injectEnvKeys?: string[],
+  bulkExtraDirs?: boolean,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
@@ -327,6 +328,12 @@ function buildContainerArgs(
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
 
+  // Signal when extra dirs are bulk-mounted (mountAllGroups/writeAllGroups)
+  // so the agent-runner doesn't auto-load all their CLAUDE.md into context
+  if (bulkExtraDirs) {
+    args.push('-e', 'NANOCLAW_BULK_EXTRA_DIRS=1');
+  }
+
   // Grant admin privilege (register_group without isMain)
   if (isAdmin) {
     args.push('-e', 'NANOCLAW_IS_ADMIN=1');
@@ -345,9 +352,21 @@ function buildContainerArgs(
     args.push('-e', `PARALLEL_API_KEY=${process.env.PARALLEL_API_KEY}`);
   }
 
-  // Per-agent model override
+  // Pass GitHub token if available (all agents get repo access)
+  if (process.env.GITHUB_TOKEN) {
+    args.push('-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN}`);
+  }
+
+  // Per-agent model override (Haiku blocked — Sonnet-4.6 minimum)
   if (modelOverride) {
-    args.push('-e', `NANOCLAW_MODEL=${modelOverride}`);
+    if (modelOverride.includes('haiku')) {
+      logger.warn(
+        `Blocked Haiku model for ${containerName}, using claude-sonnet-4-6`,
+      );
+      args.push('-e', 'NANOCLAW_MODEL=claude-sonnet-4-6');
+    } else {
+      args.push('-e', `NANOCLAW_MODEL=${modelOverride}`);
+    }
   }
 
   // Pass-through host env vars declared in containerConfig.injectEnv
@@ -406,6 +425,10 @@ export async function runContainerAgent(
     group.containerConfig?.isAdmin,
     group.containerConfig?.model,
     group.containerConfig?.injectEnv,
+    !!(
+      group.containerConfig?.mountAllGroups ||
+      group.containerConfig?.writeAllGroups
+    ),
   );
 
   logger.debug(

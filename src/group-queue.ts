@@ -176,12 +176,15 @@ export class GroupQueue {
 
   /**
    * Send a follow-up message to the active container via IPC file.
-   * Returns true if the message was written, false if no active container.
+   * Returns 'delivered' if the agent is idle (picks up immediately),
+   * 'queued' if the agent is mid-query (will see it after current task),
+   * or false if no active container.
    */
-  sendMessage(groupJid: string, text: string): boolean {
+  sendMessage(groupJid: string, text: string): 'delivered' | 'queued' | false {
     const state = this.getGroup(groupJid);
     if (!state.active || !state.groupFolder || state.isTaskContainer)
       return false;
+    const wasIdle = state.idleWaiting;
     state.idleWaiting = false; // Agent is about to receive work, no longer idle
 
     const inputDir = path.join(DATA_DIR, 'ipc', state.groupFolder, 'input');
@@ -192,7 +195,7 @@ export class GroupQueue {
       const tempPath = `${filepath}.tmp`;
       fs.writeFileSync(tempPath, JSON.stringify({ type: 'message', text }));
       fs.renameSync(tempPath, filepath);
-      return true;
+      return wasIdle ? 'delivered' : 'queued';
     } catch {
       return false;
     }

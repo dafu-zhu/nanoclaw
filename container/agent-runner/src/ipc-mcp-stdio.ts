@@ -64,6 +64,36 @@ server.tool(
 );
 
 server.tool(
+  'send_file',
+  'Send a file (document) to the user or group via Telegram. Use for delivering .tex, .pdf, .py, .csv, or any file the user needs. The file must exist in your workspace.',
+  {
+    file_path: z.string().describe('Absolute path to the file inside the container (e.g. /workspace/group/outputs/guide.tex)'),
+    caption: z.string().optional().describe('Optional caption/message to send with the file'),
+    sender: z.string().optional().describe('Your role/identity name (e.g. "Raiden")'),
+  },
+  async (args) => {
+    // Verify file exists
+    if (!fs.existsSync(args.file_path)) {
+      return { content: [{ type: 'text' as const, text: `Error: File not found: ${args.file_path}` }] };
+    }
+
+    const data: Record<string, string | undefined> = {
+      type: 'send_file',
+      chatJid,
+      filePath: args.file_path,
+      caption: args.caption || undefined,
+      sender: args.sender || undefined,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `File queued for delivery: ${path.basename(args.file_path)}` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools. Returns the task ID for future reference. To modify an existing task, use update_task instead.
 
