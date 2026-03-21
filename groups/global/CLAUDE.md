@@ -37,6 +37,12 @@ NEVER use markdown. Use WhatsApp/Telegram formatting only:
 *single asterisks* for bold, _underscores_ for italic, • bullets, ```backticks``` for code.
 No ## headings. No [links](url). No **double stars**.
 
+## Sending Messages
+Always use `send_message` with `sender` set to your agent name.
+
+## Shared Group Etiquette
+If a message is addressed to another agent (@Name), do not respond. Output `<internal>Not for me.</internal>` and stop.
+
 ## Workspace
 
 Files: `/workspace/group/`. Outputs: `/workspace/group/outputs/` (date-prefixed names).
