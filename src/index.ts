@@ -676,7 +676,7 @@ async function startMessageLoop(): Promise<void> {
                 saveState();
                 if (sendResult === 'queued') {
                   // Agent is mid-task — send auto-ack so user knows
-                  const ackText = `_${agentGroup.name} is working on a task. Your message has been queued._`;
+                  const ackText = `_${agentGroup.name} is busy but will see your message._`;
                   if (sharedChannel) {
                     sharedChannel
                       .sendMessage(chatJid, ackText)
@@ -781,7 +781,7 @@ async function startMessageLoop(): Promise<void> {
             saveState();
             if (sendResult2 === 'queued') {
               // Agent is mid-task — send auto-ack
-              const ackText = `_${group.name} is working on a task. Your message has been queued._`;
+              const ackText = `_${group.name} is busy but will see your message._`;
               channel
                 .sendMessage(chatJid, ackText)
                 .catch((err) =>
@@ -840,7 +840,7 @@ async function startMessageLoop(): Promise<void> {
                 agentMessages[agentMessages.length - 1].timestamp;
               saveState();
               if (sendResult3 === 'queued') {
-                const ackText = `_${agentGroup.name} is working on a task. Your message has been queued._`;
+                const ackText = `_${agentGroup.name} is busy but will see your message._`;
                 channel
                   .sendMessage(chatJid, ackText)
                   .catch((err) =>

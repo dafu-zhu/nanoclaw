@@ -378,14 +378,11 @@ async function runQuery(
     if (blocks.length > 0) stream.pushMultimodal(blocks);
   }
 
-  // Poll IPC for _close sentinel and nudge agent if running too long inline.
-  // User messages accumulate in IPC input dir and are picked up by
-  // waitForIpcMessage() after the query ends — never injected mid-stream.
+  // Poll IPC for _close sentinel and inject user messages mid-stream.
+  // When a message arrives, it's pushed into the conversation so the agent
+  // can decide whether to respond immediately or continue its current work.
   let ipcPolling = true;
   let closedDuringQuery = false;
-  const NUDGE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
-  const queryStartTime = Date.now();
-  let nudgeSent = false;
   const pollIpcDuringQuery = () => {
     if (!ipcPolling) return;
     if (shouldClose()) {
@@ -395,27 +392,12 @@ async function runQuery(
       ipcPolling = false;
       return;
     }
-    // Safety net: if the agent has been working inline for too long and
-    // follow-up messages are waiting, pause the current work so the agent
-    // can respond. The agent will continue its work in the next query.
-    if (!nudgeSent && Date.now() - queryStartTime > NUDGE_THRESHOLD_MS) {
-      // Only interrupt if there are queued messages waiting
-      let messagesWaiting = false;
-      try {
-        const files = fs.readdirSync(IPC_INPUT_DIR).filter(f => f.endsWith('.json'));
-        messagesWaiting = files.length > 0;
-      } catch { /* ignore */ }
-      if (messagesWaiting) {
-        nudgeSent = true;
-        const nudge = `[SYSTEM: You have been working for over 3 minutes and follow-up messages from the user are waiting. Save your progress to wip.md NOW (what you've done, what's left), then call send_message to report your progress so far. This turn will end shortly — you will continue your work in the next turn after responding to the queued messages.]`;
-        log('Sending work-pause nudge (messages waiting)');
-        stream.push(nudge);
-        // End the stream so the query terminates. The main loop picks up
-        // queued messages, and the agent continues work in the next query.
-        stream.end();
-        ipcPolling = false;
-        return;
-      }
+    // Check for new user messages and inject them immediately
+    const messages = drainIpcInput();
+    if (messages.length > 0) {
+      const interrupt = `[SYSTEM: Dafu just sent you a message while you're working. Read it and decide: if it's urgent or quick to answer, respond now via send_message then resume your work. If it's not urgent, acknowledge briefly ("got it, will look after I finish this") and continue. Save progress to wip.md if you decide to switch focus.]\n\n${messages.join('\n')}`;
+      log(`Injecting ${messages.length} message(s) mid-stream`);
+      stream.push(interrupt);
     }
     setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
   };

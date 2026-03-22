@@ -211,6 +211,15 @@ function buildVolumeMounts(
     });
   }
 
+  // Shared Whisper model cache (local audio transcription for all agents)
+  const whisperCacheDir = path.join(homeDir, '.cache', 'whisper');
+  fs.mkdirSync(whisperCacheDir, { recursive: true });
+  mounts.push({
+    hostPath: whisperCacheDir,
+    containerPath: '/home/node/.cache/whisper',
+    readonly: false, // First run downloads the model
+  });
+
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
   const groupIpcDir = resolveGroupIpcPath(group.folder);
