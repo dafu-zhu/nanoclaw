@@ -15,6 +15,7 @@ groups/*
 !groups/global/
 groups/main/*
 groups/global/*
+!groups/global/identities/
 !groups/main/CLAUDE.md
 !groups/global/CLAUDE.md
 

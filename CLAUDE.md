@@ -21,7 +21,20 @@ Single Node.js process. Channels (Telegram/WhatsApp/Slack/Discord/Gmail) self-re
 | `container/agent-runner/src/index.ts` | Runs inside container, Claude Agent SDK interface |
 | `container/agent-runner/src/ipc-mcp-stdio.ts` | MCP tools (send_message, schedule_task, register_group, etc.) |
 | `groups/{name}/CLAUDE.md` | Per-agent personality and memory |
+| `groups/global/identities/*.md` | Shared identity templates (ta, research-lead, research-member) |
 | `container/skills/*/SKILL.md` | Agent skills — synced to `.claude/skills/` at container startup |
+
+## Agent Identities
+
+Shared behavior templates in `groups/global/identities/`. Agents reference an identity via `<!-- identity: type -->` in their CLAUDE.md. The identity file provides common behavior; the agent's CLAUDE.md provides overrides (marked with `<!-- override: section -->`). **Agent CLAUDE.md always wins on conflict.**
+
+| Identity | File | Agents |
+|----------|------|--------|
+| `ta` | `ta.md` | Diluc, Tighnari, Navia, Xiao |
+| `research-lead` | `research-lead.md` | Arlecchino, Keqing |
+| `research-member` | `research-member.md` | Columbina, Capitano, Pantalone, Tartaglia, Sandrone, Yanfei, Xingqiu, Ningguang, Hu Tao, Ganyu |
+
+Solo agents (Skirk, Nahida, Zhongli, Raiden, Alhaitham) have no shared identity — each is unique.
 
 ## Skills
 
