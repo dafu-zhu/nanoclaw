@@ -1,6 +1,6 @@
 ---
-name: commit
-description: "Review changed code for reuse, quality, and efficiency, then fix any issues found. Run pre-commit hook, simplify code, commit, and push. Use when the user says /commit or asks to commit and push."
+name: commit-push
+description: "Review changed code for reuse, quality, and efficiency, then fix any issues found. Run pre-commit hook, simplify code, commit, and push. Use when the user says /commit-push or asks to commit and push."
 ---
 
 # Commit Skill
@@ -51,9 +51,9 @@ EOF
 
 4. If the commit fails due to pre-commit hook reformatting, stage the reformatted files and create a NEW commit (never amend).
 
-## Step 4: Push
+## Step 4: Push (MANDATORY)
 
-Push to the current branch's remote:
+**ALWAYS push after a successful commit. This step is not optional.** The pipeline is not complete until the push succeeds.
 
 ```bash
 git push

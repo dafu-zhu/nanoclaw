@@ -1,7 +1,7 @@
 import fs from 'fs';
 import https from 'https';
 import path from 'path';
-import { Api, Bot } from 'grammy';
+import { Api, Bot, InputFile } from 'grammy';
 
 import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
 import { readEnvFile } from '../env.js';
@@ -94,7 +94,16 @@ export async function sendPoolMessage(
 ): Promise<void> {
   // Preferred: use the group's dedicated bot token directly
   if (dedicatedToken) {
+    const isNew = !dedicatedBotCache.has(dedicatedToken);
     const api = getDedicatedApi(dedicatedToken);
+    if (isNew) {
+      // Ensure bot display name matches the agent (may have been renamed by pool rotation)
+      api
+        .setMyName(sender)
+        .catch((err: unknown) =>
+          logger.warn({ sender, err }, 'Failed to set dedicated bot name'),
+        );
+    }
     const numericId = parseInt(chatId.replace(/^tg:/, ''), 10);
     const MAX_LENGTH = 4096;
     try {
@@ -172,6 +181,41 @@ export async function sendPoolMessage(
     logger.error({ chatId, sender, err }, 'Failed to send pool message');
   }
 }
+
+/**
+ * Send a file (document) to a Telegram chat via the agent's dedicated bot.
+ * Falls back to the main bot if no dedicated token is available.
+ */
+export async function sendPoolDocument(
+  chatId: string,
+  filePath: string,
+  caption: string | undefined,
+  dedicatedToken?: string,
+): Promise<void> {
+  const numericId = parseInt(chatId.replace(/^tg:/, ''), 10);
+  const api = dedicatedToken
+    ? getDedicatedApi(dedicatedToken)
+    : poolApis.length > 0
+      ? poolApis[0]
+      : null;
+
+  if (!api) {
+    throw new Error('No Telegram bot API available to send document');
+  }
+
+  const fileBuffer = fs.readFileSync(filePath);
+  const fileName = path.basename(filePath);
+  const inputFile = new InputFile(fileBuffer, fileName);
+
+  await api.sendDocument(numericId, inputFile, {
+    caption: caption || undefined,
+  });
+  logger.info(
+    { chatId, filePath: fileName, caption },
+    'Document sent via Telegram',
+  );
+}
+
 import { registerChannel, ChannelOpts } from './registry.js';
 import {
   Channel,

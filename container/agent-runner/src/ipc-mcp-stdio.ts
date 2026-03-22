@@ -64,6 +64,36 @@ server.tool(
 );
 
 server.tool(
+  'send_file',
+  'Send a file (document) to the user or group via Telegram. Use for delivering .tex, .pdf, .py, .csv, or any file the user needs. The file must exist in your workspace.',
+  {
+    file_path: z.string().describe('Absolute path to the file inside the container (e.g. /workspace/group/outputs/guide.tex)'),
+    caption: z.string().optional().describe('Optional caption/message to send with the file'),
+    sender: z.string().optional().describe('Your role/identity name (e.g. "Raiden")'),
+  },
+  async (args) => {
+    // Verify file exists
+    if (!fs.existsSync(args.file_path)) {
+      return { content: [{ type: 'text' as const, text: `Error: File not found: ${args.file_path}` }] };
+    }
+
+    const data: Record<string, string | undefined> = {
+      type: 'send_file',
+      chatJid,
+      filePath: args.file_path,
+      caption: args.caption || undefined,
+      sender: args.sender || undefined,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(MESSAGES_DIR, data);
+
+    return { content: [{ type: 'text' as const, text: `File queued for delivery: ${path.basename(args.file_path)}` }] };
+  },
+);
+
+server.tool(
   'schedule_task',
   `Schedule a recurring or one-time task. The task will run as a full agent with access to all tools. Returns the task ID for future reference. To modify an existing task, use update_task instead.
 
@@ -437,6 +467,48 @@ Only callable by admin agents (Alhaitham).`,
     writeIpcFile(TASKS_DIR, data);
     return {
       content: [{ type: 'text' as const, text: `Token queued for ${args.folder}. Host will patch the DB${args.enka_key ? ' and set the profile photo' : ''} on next IPC cycle.` }],
+    };
+  },
+);
+
+server.tool(
+  'get_usage',
+  `Get token usage log for yourself or a teammate. Returns recent activation entries with input/output tokens, cost, and duration.
+
+Use this to track how much budget a task consumed. Your own usage is at /workspace/group/usage.jsonl (readable directly), but this tool also fetches teammate usage via the host.`,
+  {
+    folder: z.string().optional().describe('Agent folder to query (e.g., "telegram_sandrone"). Omit for your own usage.'),
+    last_n: z.number().optional().describe('Number of recent entries to return (default: 10)'),
+  },
+  async (args) => {
+    const targetFolder = args.folder || groupFolder;
+    const lastN = args.last_n || 10;
+
+    // Try reading directly (works for own folder or if mounted read-only)
+    const localPaths = [
+      `/workspace/group/usage.jsonl`,
+      `/workspace/extra/${targetFolder}/usage.jsonl`,
+    ];
+
+    for (const p of localPaths) {
+      try {
+        if (!fs.existsSync(p)) continue;
+        const lines = fs.readFileSync(p, 'utf-8').trim().split('\n').filter(Boolean);
+          const entries = lines.slice(-lastN).map(l => JSON.parse(l));
+          const totalCost = entries.reduce((s: number, e: { totalCostUsd?: number }) => s + (e.totalCostUsd || 0), 0);
+          const totalInput = entries.reduce((s: number, e: { inputTokens?: number }) => s + (e.inputTokens || 0), 0);
+          const totalOutput = entries.reduce((s: number, e: { outputTokens?: number }) => s + (e.outputTokens || 0), 0);
+          const summary = `Last ${entries.length} activations for ${targetFolder}:\n` +
+            `Total: ${totalInput.toLocaleString()} input + ${totalOutput.toLocaleString()} output tokens, $${totalCost.toFixed(4)}\n\n` +
+            entries.map((e: Record<string, unknown>) =>
+              `${e.timestamp} — ${(e.inputTokens as number || 0).toLocaleString()}in/${(e.outputTokens as number || 0).toLocaleString()}out, $${((e.totalCostUsd as number) || 0).toFixed(4)}, ${e.numTurns} turns, ${(((e.durationMs as number) || 0) / 1000).toFixed(1)}s`
+            ).join('\n');
+          return { content: [{ type: 'text' as const, text: summary }] };
+      } catch { /* fall through */ }
+    }
+
+    return {
+      content: [{ type: 'text' as const, text: `No usage data found for ${targetFolder}. The agent may not have been activated yet.` }],
     };
   },
 );

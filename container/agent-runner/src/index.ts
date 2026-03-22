@@ -35,6 +35,13 @@ interface ContainerOutput {
   result: string | null;
   newSessionId?: string;
   error?: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalCostUsd: number;
+    durationMs: number;
+    numTurns: number;
+  };
 }
 
 interface SessionEntry {
@@ -371,7 +378,9 @@ async function runQuery(
     if (blocks.length > 0) stream.pushMultimodal(blocks);
   }
 
-  // Poll IPC for follow-up messages and _close sentinel during the query
+  // Poll IPC for _close sentinel and inject user messages mid-stream.
+  // When a message arrives, it's pushed into the conversation so the agent
+  // can decide whether to respond immediately or continue its current work.
   let ipcPolling = true;
   let closedDuringQuery = false;
   const pollIpcDuringQuery = () => {
@@ -383,10 +392,12 @@ async function runQuery(
       ipcPolling = false;
       return;
     }
+    // Check for new user messages and inject them immediately
     const messages = drainIpcInput();
-    for (const text of messages) {
-      log(`Piping IPC message into active query (${text.length} chars)`);
-      stream.push(text);
+    if (messages.length > 0) {
+      const interrupt = `[SYSTEM: Dafu just sent you a message while you're working. Read it and decide: if it's urgent or quick to answer, respond now via send_message then resume your work. If it's not urgent, acknowledge briefly ("got it, will look after I finish this") and continue. Save progress to wip.md if you decide to switch focus.]\n\n${messages.join('\n')}`;
+      log(`Injecting ${messages.length} message(s) mid-stream`);
+      stream.push(interrupt);
     }
     setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
   };
@@ -405,10 +416,14 @@ async function runQuery(
   }
 
   // Discover additional directories mounted at /workspace/extra/*
-  // These are passed to the SDK so their CLAUDE.md files are loaded automatically
+  // When NANOCLAW_BULK_EXTRA_DIRS is set (mountAllGroups/writeAllGroups),
+  // don't register them as additionalDirectories — that would auto-load
+  // every agent's CLAUDE.md into the session context (100K+ tokens).
+  // The dirs are still mounted and accessible via Read/Glob/Grep on demand.
   const extraDirs: string[] = [];
   const extraBase = '/workspace/extra';
-  if (fs.existsSync(extraBase)) {
+  const bulkMounted = process.env.NANOCLAW_BULK_EXTRA_DIRS === '1';
+  if (!bulkMounted && fs.existsSync(extraBase)) {
     for (const entry of fs.readdirSync(extraBase)) {
       const fullPath = path.join(extraBase, entry);
       if (fs.statSync(fullPath).isDirectory()) {
@@ -416,7 +431,9 @@ async function runQuery(
       }
     }
   }
-  if (extraDirs.length > 0) {
+  if (bulkMounted) {
+    log('Bulk extra dirs mounted — skipping additionalDirectories to reduce context size');
+  } else if (extraDirs.length > 0) {
     log(`Additional directories: ${extraDirs.join(', ')}`);
   }
 
@@ -439,7 +456,10 @@ async function runQuery(
         'TeamCreate', 'TeamDelete', 'SendMessage',
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
-        'mcp__nanoclaw__*'
+        'mcp__nanoclaw__*',
+        'mcp__gmail__*',
+        'mcp__parallel-search__*',
+        'mcp__parallel-task__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -456,6 +476,26 @@ async function runQuery(
             NANOCLAW_IS_ADMIN: process.env.NANOCLAW_IS_ADMIN || '0',
           },
         },
+        gmail: {
+          command: 'npx',
+          args: ['-y', '@gongrzhe/server-gmail-autoauth-mcp'],
+        },
+        ...(process.env.PARALLEL_API_KEY ? {
+          'parallel-search': {
+            type: 'http' as const,
+            url: 'https://search-mcp.parallel.ai/mcp',
+            headers: {
+              'Authorization': `Bearer ${process.env.PARALLEL_API_KEY}`,
+            },
+          },
+          'parallel-task': {
+            type: 'http' as const,
+            url: 'https://task-mcp.parallel.ai/mcp',
+            headers: {
+              'Authorization': `Bearer ${process.env.PARALLEL_API_KEY}`,
+            },
+          },
+        } : {}),
       },
       hooks: {
         PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
@@ -482,12 +522,21 @@ async function runQuery(
 
     if (message.type === 'result') {
       resultCount++;
-      const textResult = 'result' in message ? (message as { result?: string }).result : null;
+      const msg = message as Record<string, unknown>;
+      const textResult = typeof msg.result === 'string' ? msg.result : null;
       log(`Result #${resultCount}: subtype=${message.subtype}${textResult ? ` text=${textResult.slice(0, 200)}` : ''}`);
+      const usage = msg.usage as { inputTokens?: number; outputTokens?: number } | undefined;
       writeOutput({
         status: 'success',
         result: textResult || null,
-        newSessionId
+        newSessionId,
+        usage: usage ? {
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+          totalCostUsd: typeof msg.total_cost_usd === 'number' ? msg.total_cost_usd : 0,
+          durationMs: typeof msg.duration_ms === 'number' ? msg.duration_ms : 0,
+          numTurns: typeof msg.num_turns === 'number' ? msg.num_turns : 0,
+        } : undefined,
       });
     }
   }
@@ -639,6 +688,68 @@ async function main(): Promise<void> {
   }
   // --- End slash command handling ---
 
+  // --- Auto-compaction: keep conversation history at a sweet spot ---
+  // Too large = model learns bad patterns from its own output, context bloat
+  // Too small = loses useful context. Sweet spot: ~500KB–1MB.
+  const AUTO_COMPACT_THRESHOLD = 500 * 1024; // 500KB — compact before it gets too large
+  if (sessionId) {
+    const transcriptDir = path.join(
+      '/home/node/.claude/projects/-workspace-group',
+    );
+    try {
+      if (fs.existsSync(transcriptDir)) {
+        const transcriptFile = path.join(transcriptDir, `${sessionId}.jsonl`);
+        if (fs.existsSync(transcriptFile)) {
+          const stats = fs.statSync(transcriptFile);
+          log(`Transcript size: ${(stats.size / 1024).toFixed(0)}KB (threshold: ${(AUTO_COMPACT_THRESHOLD / 1024).toFixed(0)}KB)`);
+          if (stats.size > AUTO_COMPACT_THRESHOLD) {
+            log('Transcript exceeds threshold — running auto-compaction before query');
+            try {
+              let compactSessionId: string | undefined;
+              let compactBoundary = false;
+              for await (const message of query({
+                prompt: '/compact',
+                options: {
+                  model: process.env.NANOCLAW_MODEL || 'claude-sonnet-4-6',
+                  cwd: '/workspace/group',
+                  resume: sessionId,
+                  systemPrompt: undefined,
+                  allowedTools: [],
+                  env: sdkEnv,
+                  permissionMode: 'bypassPermissions' as const,
+                  allowDangerouslySkipPermissions: true,
+                  settingSources: ['project', 'user'] as const,
+                  hooks: {
+                    PreCompact: [{ hooks: [createPreCompactHook(containerInput.assistantName)] }],
+                  },
+                },
+              })) {
+                if (message.type === 'system' && message.subtype === 'init') {
+                  compactSessionId = message.session_id;
+                }
+                if (message.type === 'system' && (message as { subtype?: string }).subtype === 'compact_boundary') {
+                  compactBoundary = true;
+                }
+              }
+              if (compactSessionId) {
+                sessionId = compactSessionId;
+                // Emit session update so host tracks the new session ID
+                writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+              }
+              log(`Auto-compaction done. boundary=${compactBoundary}, newSession=${compactSessionId || 'none'}`);
+            } catch (err) {
+              log(`Auto-compaction failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+              // Continue with the original session — compaction failure shouldn't block the agent
+            }
+          }
+        }
+      }
+    } catch (err) {
+      log(`Failed to check transcript size: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  // --- End auto-compaction ---
+
   // Query loop: run query → wait for IPC message → run new query → repeat
   let resumeAt: string | undefined;
   try {
@@ -674,7 +785,7 @@ async function main(): Promise<void> {
       }
 
       log(`Got new message (${nextMessage.length} chars), starting new query`);
-      prompt = nextMessage;
+      prompt = `[SYSTEM: Your previous turn was paused because follow-up messages arrived. The following message(s) came in while you were working. Respond to them first, then check wip.md and CONTINUE your previous work from where you left off. Do not start over — pick up exactly where you stopped.]\n\n${nextMessage}`;
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

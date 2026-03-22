@@ -4,6 +4,7 @@
  */
 import { ChildProcess, exec, spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import {
@@ -45,17 +46,51 @@ export interface ContainerInput {
   imageAttachments?: Array<{ relativePath: string; mediaType: string }>;
 }
 
+export interface UsageStats {
+  inputTokens: number;
+  outputTokens: number;
+  totalCostUsd: number;
+  durationMs: number;
+  numTurns: number;
+}
+
 export interface ContainerOutput {
   status: 'success' | 'error';
   result: string | null;
   newSessionId?: string;
   error?: string;
+  usage?: UsageStats;
 }
 
 interface VolumeMount {
   hostPath: string;
   containerPath: string;
   readonly: boolean;
+}
+
+const USAGE_DIR = path.join(DATA_DIR, 'usage');
+
+function appendUsageLog(folder: string, usage: UsageStats): void {
+  const entry = {
+    ...usage,
+    timestamp: new Date().toISOString(),
+    folder,
+  };
+  const line = JSON.stringify(entry) + '\n';
+
+  try {
+    fs.mkdirSync(USAGE_DIR, { recursive: true });
+    fs.appendFileSync(path.join(USAGE_DIR, `${folder}.jsonl`), line);
+  } catch (err) {
+    logger.warn({ folder, err }, 'Failed to write centralized usage log');
+  }
+
+  try {
+    const groupUsagePath = path.join(GROUPS_DIR, folder, 'usage.jsonl');
+    fs.appendFileSync(groupUsagePath, line);
+  } catch (err) {
+    logger.warn({ folder, err }, 'Failed to write group usage log');
+  }
 }
 
 function buildVolumeMounts(
@@ -165,6 +200,26 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // Gmail credentials directory (for Gmail MCP inside the container)
+  const homeDir = os.homedir();
+  const gmailDir = path.join(homeDir, '.gmail-mcp');
+  if (fs.existsSync(gmailDir)) {
+    mounts.push({
+      hostPath: gmailDir,
+      containerPath: '/home/node/.gmail-mcp',
+      readonly: false, // MCP may need to refresh OAuth tokens
+    });
+  }
+
+  // Shared Whisper model cache (local audio transcription for all agents)
+  const whisperCacheDir = path.join(homeDir, '.cache', 'whisper');
+  fs.mkdirSync(whisperCacheDir, { recursive: true });
+  mounts.push({
+    hostPath: whisperCacheDir,
+    containerPath: '/home/node/.cache/whisper',
+    readonly: false, // First run downloads the model
+  });
+
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
   const groupIpcDir = resolveGroupIpcPath(group.folder);
@@ -252,6 +307,7 @@ function buildContainerArgs(
   isAdmin?: boolean,
   modelOverride?: string,
   injectEnvKeys?: string[],
+  bulkExtraDirs?: boolean,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
 
@@ -281,6 +337,12 @@ function buildContainerArgs(
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
   }
 
+  // Signal when extra dirs are bulk-mounted (mountAllGroups/writeAllGroups)
+  // so the agent-runner doesn't auto-load all their CLAUDE.md into context
+  if (bulkExtraDirs) {
+    args.push('-e', 'NANOCLAW_BULK_EXTRA_DIRS=1');
+  }
+
   // Grant admin privilege (register_group without isMain)
   if (isAdmin) {
     args.push('-e', 'NANOCLAW_IS_ADMIN=1');
@@ -294,9 +356,26 @@ function buildContainerArgs(
     }
   }
 
-  // Per-agent model override
+  // Pass Parallel AI API key if available (all agents get search access)
+  if (process.env.PARALLEL_API_KEY) {
+    args.push('-e', `PARALLEL_API_KEY=${process.env.PARALLEL_API_KEY}`);
+  }
+
+  // Pass GitHub token if available (all agents get repo access)
+  if (process.env.GITHUB_TOKEN) {
+    args.push('-e', `GITHUB_TOKEN=${process.env.GITHUB_TOKEN}`);
+  }
+
+  // Per-agent model override (Haiku blocked — Sonnet-4.6 minimum)
   if (modelOverride) {
-    args.push('-e', `NANOCLAW_MODEL=${modelOverride}`);
+    if (modelOverride.includes('haiku')) {
+      logger.warn(
+        `Blocked Haiku model for ${containerName}, using claude-sonnet-4-6`,
+      );
+      args.push('-e', 'NANOCLAW_MODEL=claude-sonnet-4-6');
+    } else {
+      args.push('-e', `NANOCLAW_MODEL=${modelOverride}`);
+    }
   }
 
   // Pass-through host env vars declared in containerConfig.injectEnv
@@ -355,6 +434,10 @@ export async function runContainerAgent(
     group.containerConfig?.isAdmin,
     group.containerConfig?.model,
     group.containerConfig?.injectEnv,
+    !!(
+      group.containerConfig?.mountAllGroups ||
+      group.containerConfig?.writeAllGroups
+    ),
   );
 
   logger.debug(
@@ -438,6 +521,9 @@ export async function runContainerAgent(
             const parsed: ContainerOutput = JSON.parse(jsonStr);
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
+            }
+            if (parsed.usage) {
+              appendUsageLog(group.folder, parsed.usage);
             }
             hadStreamingOutput = true;
             // Activity detected — reset the hard timeout
@@ -771,7 +857,7 @@ export function writeGroupsSnapshot(
   groupFolder: string,
   isMain: boolean,
   groups: AvailableGroup[],
-  registeredJids: Set<string>,
+  _registeredJids: Set<string>,
 ): void {
   const groupIpcDir = resolveGroupIpcPath(groupFolder);
   fs.mkdirSync(groupIpcDir, { recursive: true });

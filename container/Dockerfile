@@ -1,6 +1,14 @@
 # NanoClaw Agent Container
 # Runs Claude Agent SDK in isolated Linux VM with browser automation
 
+# --- Build stage: compile whisper.cpp ---
+FROM node:22-slim AS whisper-build
+RUN apt-get update && apt-get install -y build-essential git cmake \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp \
+    && cd /tmp/whisper.cpp && cmake -B build -DBUILD_SHARED_LIBS=OFF && cmake --build build -j$(nproc) --config Release
+
+# --- Main image ---
 FROM node:22-slim
 
 # Install system dependencies for Chromium
@@ -27,10 +35,13 @@ RUN apt-get update && apt-get install -y \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python3 + gdown (Google Drive downloader) + Google API client
-RUN apt-get update && apt-get install -y python3 python3-pip \
+# Install Python3 + ffmpeg + gdown + Google API client
+RUN apt-get update && apt-get install -y python3 python3-pip ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --break-system-packages gdown google-api-python-client google-auth
+
+# Copy whisper.cpp binary from build stage
+COPY --from=whisper-build /tmp/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli
 
 # Install GitHub CLI (gh)
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
