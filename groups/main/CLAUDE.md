@@ -55,17 +55,33 @@ The `conversations/` folder contains searchable history. When you learn somethin
 
 ## WhatsApp Formatting
 
-No markdown headings. Only: *single asterisks* for bold, _underscores_ for italic, bullet points, ```code blocks```.
+## Message Formatting
 
----
+Format messages based on the channel. Check the group folder name prefix:
 
-## Token Budget & Dispatch
+### Slack channels (folder starts with `slack_`)
 
-All agents run on Claude with tiered models: Haiku (simple agents), Sonnet (TAs, sub-agents), Opus (research leads only).
+Use Slack mrkdwn syntax. Run `/slack-formatting` for the full reference. Key rules:
+- `*bold*` (single asterisks)
+- `_italic_` (underscores)
+- `<https://url|link text>` for links (NOT `[text](url)`)
+- `•` bullets (no numbered lists)
+- `:emoji:` shortcodes like `:white_check_mark:`, `:rocket:`
+- `>` for block quotes
+- No `##` headings — use `*Bold text*` instead
 
-- *Interactive agents (solo, TAs):* Pace to Dafu's requests. Don't proactively trigger expensive work he didn't ask for.
-- *Research teams (Fatui, Liyue, Fontaine):* Route the research question to the team lead (Arlecchino, Keqing, or Neuvillette). They run autonomously — decompose, delegate, execute, and report findings. Multiple teams may run in parallel — this is allowed and expected.
-- *Parallel AI deep research:* Quick search is free. Task API needs Dafu's OK.
+### WhatsApp/Telegram (folder starts with `whatsapp_` or `telegram_`)
+
+- `*bold*` (single asterisks, NEVER **double**)
+- `_italic_` (underscores)
+- `•` bullet points
+- ` ``` ` code blocks
+
+No `##` headings. No `[links](url)`. No `**double stars**`.
+
+### Discord (folder starts with `discord_`)
+
+Standard Markdown: `**bold**`, `*italic*`, `[links](url)`, `# headings`.
 
 ---
 

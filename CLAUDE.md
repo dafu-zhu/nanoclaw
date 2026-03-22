@@ -25,7 +25,12 @@ Single Node.js process. Channels (Telegram/WhatsApp/Slack/Discord/Gmail) self-re
 
 ## Skills
 
-Skills in `container/skills/{name}/SKILL.md` auto-sync at container spawn. Add new: create the directory + SKILL.md, no rebuild needed.
+Four types of skills exist in NanoClaw. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full taxonomy and guidelines.
+
+- **Feature skills** — merge a `skill/*` branch to add capabilities (e.g. `/add-telegram`, `/add-slack`)
+- **Utility skills** — ship code files alongside SKILL.md (e.g. `/claw`)
+- **Operational skills** — instruction-only workflows, always on `main` (e.g. `/setup`, `/debug`)
+- **Container skills** — loaded inside agent containers at runtime (`container/skills/`)
 
 | Skill | When to Use |
 |-------|-------------|
@@ -33,6 +38,10 @@ Skills in `container/skills/{name}/SKILL.md` auto-sync at container spawn. Add n
 | `/customize` | Adding channels, integrations, changing behavior |
 | `/debug` | Container issues, logs, troubleshooting |
 | `/update-nanoclaw` | Pull upstream fixes into customized install |
+
+## Contributing
+
+Before creating a PR, adding a skill, or preparing any contribution, you MUST read [CONTRIBUTING.md](CONTRIBUTING.md). It covers accepted change types, the four skill types and their guidelines, SKILL.md format rules, PR requirements, and the pre-submission checklist (searching for existing PRs/issues, testing, description format).
 
 ## Development
 

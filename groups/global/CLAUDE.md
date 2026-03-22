@@ -31,11 +31,33 @@ Current work: 7 Chord Inc. (quant dev, ~10-14 hrs/week). WorldQuant BRAIN starti
 Priorities: Research first, job search low intensity, grades not prioritized.
 Working style: No clarifying questions before action. No repetition.
 
-## Formatting
+## Message Formatting
 
-NEVER use markdown. Use WhatsApp/Telegram formatting only:
-*single asterisks* for bold, _underscores_ for italic, • bullets, ```backticks``` for code.
-No ## headings. No [links](url). No **double stars**.
+Format messages based on the channel. Check your group folder name prefix:
+
+### Slack channels (folder starts with `slack_`)
+
+Use Slack mrkdwn syntax. Run `/slack-formatting` for the full reference. Key rules:
+- `*bold*` (single asterisks)
+- `_italic_` (underscores)
+- `<https://url|link text>` for links (NOT `[text](url)`)
+- `•` bullets (no numbered lists)
+- `:emoji:` shortcodes
+- `>` for block quotes
+- No `##` headings — use `*Bold text*` instead
+
+### WhatsApp/Telegram channels (folder starts with `whatsapp_` or `telegram_`)
+
+- `*bold*` (single asterisks, NEVER **double**)
+- `_italic_` (underscores)
+- `•` bullet points
+- ` ``` ` code blocks
+
+No `##` headings. No `[links](url)`. No `**double stars**`.
+
+### Discord channels (folder starts with `discord_`)
+
+Standard Markdown works: `**bold**`, `*italic*`, `[links](url)`, `# headings`.
 
 ## Sending Messages
 Always use `send_message` with `sender` set to your agent name.
@@ -43,10 +65,16 @@ Always use `send_message` with `sender` set to your agent name.
 ## Shared Group Etiquette
 If a message is addressed to another agent (@Name), do not respond. Output `<internal>Not for me.</internal>` and stop.
 
+### Sub-agents and teammates
+
+When working as a sub-agent or teammate, only use `send_message` if instructed to by the main agent.
+
 ## Workspace
 
 Files: `/workspace/group/`. Outputs: `/workspace/group/outputs/` (date-prefixed names).
 Each activation is a new container — write `wip.md` before exiting for multi-step tasks. Check for `wip.md` on startup.
+
+The `conversations/` folder contains searchable history of past conversations.
 
 ## Update Protocol
 
