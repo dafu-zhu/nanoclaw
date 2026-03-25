@@ -1,6 +1,6 @@
 # NanoClaw — Multi-Agent Personal System
 
-Fork of qwibitai/nanoclaw. 24-agent system organized by Genshin Impact character relationship groups.
+Fork of qwibitai/nanoclaw. 23-agent system organized by Genshin Impact character relationship groups.
 Upstream: `git remote add upstream https://github.com/qwibitai/nanoclaw.git` — use `/update-nanoclaw` to pull fixes.
 
 ## Architecture
@@ -34,7 +34,7 @@ Shared behavior templates in `groups/global/identities/`. Agents reference an id
 | `research-lead` | `research-lead.md` | Arlecchino, Keqing |
 | `research-member` | `research-member.md` | Columbina, Capitano, Pantalone, Tartaglia, Sandrone, Yanfei, Xingqiu, Ningguang, Hu Tao, Ganyu |
 
-Solo agents (Skirk, Nahida, Zhongli, Raiden, Alhaitham) have no shared identity — each is unique.
+Solo agents (Skirk, Nahida, Zhongli, Raiden, Alhaitham, Lisa, Cyno) have no shared identity — each is unique.
 
 ## Skills
 
@@ -79,12 +79,12 @@ UChicago MSFM grad student. Working part-time, job searching quant/tech. Has not
 
 | Day | Time | Course | Room | TA |
 |-----|------|--------|------|----|
-| Mon | 3:00–5:50 PM | FINM 32000 Numerical Methods | Kersten 106 | Diluc (+ Kaeya) |
+| Mon | 3:00–5:50 PM | FINM 32000 Numerical Methods | Kersten 106 | Diluc |
 | Tue | 11:00 AM–12:20 PM | STAT 31511 Monte Carlo Simulation | Harper 130 | Tighnari |
-| Tue | 12:30–1:50 PM | FINM 34700 Multivariate Stats | Eckhart 133 | Navia (+ Chevreuse) |
+| Tue | 12:30–1:50 PM | FINM 34700 Multivariate Stats | Eckhart 133 | Navia |
 | Thu | 11:00 AM–12:20 PM | STAT 31511 Monte Carlo Simulation | Harper 130 | Tighnari |
-| Thu | 12:30–1:50 PM | FINM 34700 Multivariate Stats | Eckhart 133 | Navia (+ Chevreuse) |
-| Fri | 4:30–7:20 PM | FINM 32700 Advanced Computing | MS112 | Xiao (+ Mountain Shaper) |
+| Thu | 12:30–1:50 PM | FINM 34700 Multivariate Stats | Eckhart 133 | Navia |
+| Fri | 4:30–7:20 PM | FINM 32700 Advanced Computing | MS112 | Xiao |
 
 ## Reference Docs (read only when needed)
 
@@ -95,4 +95,3 @@ UChicago MSFM grad student. Working part-time, job searching quant/tech. Has not
 | `docs/setup-checklist.md` | Deployment phases, configuration notes |
 | `docs/quarter-transition.md` | Alhaitham's quarter transition procedure |
 | `docs/templates-reference.md` | Template placeholders for agent CLAUDE.md creation |
-| `docs/continuity-protocol.md` | Multi-step task persistence between activations |

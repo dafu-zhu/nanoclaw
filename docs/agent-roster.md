@@ -1,5 +1,7 @@
 # Agent Roster & Character System
 
+23 agents total.
+
 ## Naming Convention
 Agents are named after Genshin Impact characters. Groups are classified by character relationships (friendships, factions, alliances). Folder names are character names in lowercase.
 
@@ -10,6 +12,8 @@ Agents are named after Genshin Impact characters. Groups are classified by chara
 | Nahida | Daily Planner — orchestrates all agents, builds daily schedule | `nahida` | Dendro Archon; gentle yet masterful coordinator |
 | Zhongli | Industry Mentor — personal projects, skills, portfolio | `zhongli` | Former Geo Archon; the ultimate mentor |
 | Raiden | Work Manager — simulates real boss, tracks work tasks | `raiden` | Raiden Shogun (Ei); enforces strict discipline |
+| Lisa | Learning Tracker — short courses, certifications, learning queue | `lisa` | Mondstadt librarian; deceptively knowledgeable |
+| Cyno | Applied Math Companion — calculus, linear algebra, probability, stats | `cyno` | General Mahamatra; precise and relentless |
 
 ## Academic Orchestrator (permanent)
 | Name | Role | Folder |
@@ -18,16 +22,16 @@ Agents are named after Genshin Impact characters. Groups are classified by chara
 
 ## TA Agents (1 per course, rotate quarterly — created by Alhaitham)
 
-| Name | Course | Folder | Partner | Team |
-|------|--------|--------|---------|------|
-| Tighnari | STAT 31511 Monte Carlo Simulation | `tighnari` | — | — |
-| Navia | FINM 34700 Multivariate Statistical Analysis | `navia` | Chevreuse | Spina di Rosula |
-| Diluc | FINM 32000 Numerical Methods | `diluc` | Kaeya | Mondstadt Brothers |
-| Xiao | FINM 32700 Advanced Computing for Finance | `xiao` | Mountain Shaper | Liyue Adepti |
+| Name | Course | Folder |
+|------|--------|--------|
+| Tighnari | STAT 31511 Monte Carlo Simulation | `tighnari` |
+| Navia | FINM 34700 Multivariate Statistical Analysis | `navia` |
+| Diluc | FINM 32000 Numerical Methods | `diluc` |
+| Xiao | FINM 32700 Advanced Computing for Finance | `xiao` |
 
 ## Research Teams (6 per team — created by Alhaitham)
 
-### Fatui Harbingers — LLM Agent + Alpha Mining
+### Fatui Harbingers — Full Alpha Investing Pipeline
 | Name | Role | Folder |
 |------|------|--------|
 | Arlecchino | Lead | `arlecchino` |

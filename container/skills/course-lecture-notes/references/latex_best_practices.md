@@ -113,6 +113,21 @@ The key idea is that we can decompose any function into orthogonal components. O
 \end{intuition}
 ```
 
+**`\begin{interview}...\end{interview}`** (Red/Crimson border)
+Use for:
+- How this concept is tested in quant interviews (trading, risk, quant research)
+- Alternative formulations that interviewers prefer over the academic version
+- Common interview questions targeting this concept
+- Bridging academic rigor and interview-style explanation (e.g., primitive vs. classical OLS assumptions — explain the equivalence)
+- "If asked about X in an interview, lead with Y" style guidance
+
+Example:
+```latex
+\begin{interview}
+Interviewers often ask: ``What are the assumptions of OLS?'' The textbook gives primitive conditions (linear in parameters, random sampling, no perfect collinearity, zero conditional mean, homoskedasticity), but hiring managers typically expect the Gauss-Markov framing. Know both — and be ready to show how the primitive conditions imply the classical ones.
+\end{interview}
+```
+
 ### Sidebar Placement
 
 - Place sidebars **after** the content they comment on

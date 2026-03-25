@@ -57,7 +57,6 @@ const ALL_BOTS = [
   // Research leads only (3)
   { name: 'Arlecchino', username: 'nanoclaw_arlecchino_bot' }, // Fatui — LLM + Alpha
   { name: 'Keqing',     username: 'nanoclaw_keqing_bot' },     // Liyue Qixing — Derivatives
-  { name: 'Neuvillette', username: 'nanoclaw_neuvillette_bot' },// Court of Fontaine — Alpha-lab infra
 
   // Solo agents (additional)
   { name: 'Lisa',       username: 'nanoclaw_lisa_bot' },       // Learning Tracker

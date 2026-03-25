@@ -158,6 +158,13 @@ Use `\begin{intuition}` for:
 - Proof strategies and key ideas
 - "Why this works" explanations
 
+Use `\begin{interview}` for:
+- How this concept appears in quant interviews (trading, risk, quant research roles)
+- Alternative formulations interviewers prefer (e.g., primitive vs. classical OLS assumptions)
+- Common interview questions that test this concept
+- Connections between the academic treatment and how a hiring manager expects you to explain it
+- "If asked about X, the key points are..." style guidance
+
 ### 5. Handling Multi-Part Audio Transcripts
 
 When multiple transcript files are provided:
@@ -253,7 +260,7 @@ integrate into existing LaTeX at the correct location.
 LaTeX template with:
 - Proper document structure and packages
 - Pre-configured theorem environments
-- Custom left-border sidebars (`professorsnote`, `insight`, `intuition`)
+- Custom left-border sidebars (`professorsnote`, `insight`, `intuition`, `interview`)
 - Header/footer formatting
 - Table of contents included by default
 

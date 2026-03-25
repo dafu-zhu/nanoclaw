@@ -19,6 +19,7 @@
 \definecolor{intuitionamber}{RGB}{245, 158, 11}
 \definecolor{milestoneviolet}{RGB}{139, 92, 246}
 \definecolor{readingrose}{RGB}{244, 63, 94}
+\definecolor{interviewcrimson}{RGB}{190, 18, 60}
 
 % === THEOREM ENVIRONMENTS ===
 \theoremstyle{definition}
@@ -82,6 +83,16 @@
     before upper={\textcolor{readingrose}{\textbf{Further Reading.}}\enspace}
 }
 
+% Interview: Quant interview connections — how this concept appears in interviews
+\newtcolorbox{interview}{
+    blanker,
+    borderline west={3pt}{0pt}{interviewcrimson},
+    left=12pt,
+    before skip=12pt,
+    after skip=12pt,
+    before upper={\textcolor{interviewcrimson}{\textbf{Interview.}}\enspace}
+}
+
 % === DOCUMENT INFO (REPLACE PLACEHOLDERS) ===
 \newcommand{\doctitle}{<<TITLE>>}
 \newcommand{\docsubtitle}{<<SUBTITLE>>}
@@ -135,6 +146,7 @@
 % - \begin{intuition}...\end{intuition} — "why this works" explanations
 % - \begin{milestone}...\end{milestone} — end-of-section checkpoints
 % - \begin{reading}...\end{reading} — curated external references (strict citations)
+% - \begin{interview}...\end{interview} — quant interview connections and practice
 %
 % STYLE RULES:
 % - Lead with intuition before formulas

@@ -50,7 +50,6 @@ BOT_CONFIG=(
   "Diluc|diluc|Diluc|-|5"
   "Arlecchino|arlecchino|Arlecchino|-|5"
   "Keqing|keqing|Keqing|-|5"
-  "Neuvillette|neuvillette|Neuvillette|-|5"
   "Lisa|lisa|Lisa|-|4"
 )
 

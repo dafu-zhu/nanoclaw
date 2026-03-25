@@ -25,7 +25,7 @@ const ROOT = path.resolve(__dirname, '..');
 const BOT_ORDER = [
   'Skirk', 'Nahida', 'Zhongli', 'Raiden', 'Alhaitham',
   'Tighnari', 'Navia', 'Diluc', 'Xiao',
-  'Arlecchino', 'Keqing', 'Neuvillette',
+  'Arlecchino', 'Keqing',
 ];
 
 function loadJson(file) {

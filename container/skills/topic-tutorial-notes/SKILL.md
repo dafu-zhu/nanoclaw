@@ -177,6 +177,7 @@ Use the template from `assets/template.tex`. The template provides five sidebar 
 | `intuition` | Amber | High-level proof sketches, "why does this formula look this way" |
 | `milestone` | Violet | Section checkpoints — what the reader should now understand |
 | `reading` | Rose | External references for Tier 3 content (strict citation format) |
+| `interview` | Crimson | Quant interview connections — how interviewers test this concept |
 
 ### Theorem environments
 
@@ -263,7 +264,7 @@ User: Teach me stochastic calculus. Use my probability theory notes
 ### assets/template.tex
 LaTeX template with:
 - Document structure and packages
-- Five sidebar environments (derivation, insight, intuition, milestone, reading)
+- Six sidebar environments (derivation, insight, intuition, milestone, reading, interview)
 - Theorem environments
 - Header/footer formatting
 - Placeholder fields for customization
