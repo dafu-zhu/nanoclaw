@@ -58,6 +58,7 @@ import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
+import { ChannelType } from './text-styles.js';
 
 /**
  * Tracks chatJids that received at least one IPC send_message during
@@ -1308,7 +1309,7 @@ async function main(): Promise<void> {
         logger.warn({ jid }, 'No channel owns JID, cannot send message');
         return;
       }
-      const text = formatOutbound(rawText);
+      const text = formatOutbound(rawText, channel.name as ChannelType);
       if (!text) return;
       // Use pool bot for virtual/shared-group agents so the message
       // appears under the agent's name rather than the main bot.
@@ -1338,11 +1339,13 @@ async function main(): Promise<void> {
   }
 
   startIpcWatcher({
-    sendMessage: async (jid, text, sender, groupFolder, poolBotToken) => {
+    sendMessage: async (jid, rawText, sender, groupFolder, poolBotToken) => {
       // Track that this JID received an IPC message during the current invocation
       jidsWithIpcMessage.add(jid);
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
+      const text = formatOutbound(rawText, channel.name as ChannelType);
+      if (!text) return;
       if (sender && groupFolder && jid.startsWith('tg:')) {
         const fallback = (j: string, t: string) => channel.sendMessage(j, t);
         return sendPoolMessage(
