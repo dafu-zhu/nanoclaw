@@ -53,6 +53,15 @@ import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
+
+/**
+ * Tracks chatJids that received at least one IPC send_message during
+ * the current agent invocation.  Used to suppress the automatic final
+ * result — if the agent already spoke via send_message, the final
+ * output is redundant (the agent is instructed to wrap it in <internal>
+ * tags, but this acts as a safety net).
+ */
+const jidsWithIpcMessage = new Set<string>();
 import {
   restoreRemoteControl,
   startRemoteControl,
@@ -266,6 +275,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   await channel.setTyping?.(chatJid, true);
   let hadError = false;
   let outputSentToUser = false;
+  // Clear IPC message tracking for this invocation
+  jidsWithIpcMessage.delete(chatJid);
 
   const output = await runAgent(
     group,
@@ -282,8 +293,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
         const text = raw.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
         logger.info({ group: group.name }, `Agent output: ${raw.length} chars`);
         if (text) {
-          await channel.sendMessage(chatJid, text);
-          outputSentToUser = true;
+          // If the agent already sent messages via send_message IPC,
+          // suppress the final result to avoid redundant/meta output.
+          if (jidsWithIpcMessage.has(chatJid)) {
+            logger.info(
+              { group: group.name },
+              'Suppressing final result — agent already sent messages via IPC',
+            );
+          } else {
+            await channel.sendMessage(chatJid, text);
+            outputSentToUser = true;
+          }
         }
         // Only reset idle timer on actual results, not session-update markers (result: null)
         resetIdleTimer();
@@ -1243,6 +1263,8 @@ async function main(): Promise<void> {
 
   startIpcWatcher({
     sendMessage: async (jid, text, sender, groupFolder, poolBotToken) => {
+      // Track that this JID received an IPC message during the current invocation
+      jidsWithIpcMessage.add(jid);
       const channel = findChannel(channels, jid);
       if (!channel) throw new Error(`No channel for JID: ${jid}`);
       if (sender && groupFolder && jid.startsWith('tg:')) {
