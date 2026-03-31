@@ -150,7 +150,9 @@ async function getValidOAuthToken(): Promise<string | undefined> {
         return refreshed.accessToken;
       }
       // Refresh failed — return stale token as last resort
-      logger.warn('OAuth refresh failed, using existing (possibly expired) token');
+      logger.warn(
+        'OAuth refresh failed, using existing (possibly expired) token',
+      );
       return creds.accessToken;
     })().finally(() => {
       refreshPromise = null;

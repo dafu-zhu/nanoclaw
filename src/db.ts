@@ -693,6 +693,23 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
   return result;
 }
 
+export function deleteRegisteredGroup(jid: string): void {
+  const group = getRegisteredGroup(jid);
+  if (!group) return;
+
+  const tasks = db
+    .prepare('SELECT id FROM scheduled_tasks WHERE group_folder = ?')
+    .all(group.folder) as { id: string }[];
+
+  for (const task of tasks) {
+    db.prepare('DELETE FROM task_run_logs WHERE task_id = ?').run(task.id);
+    db.prepare('DELETE FROM scheduled_tasks WHERE id = ?').run(task.id);
+  }
+
+  db.prepare('DELETE FROM sessions WHERE group_folder = ?').run(group.folder);
+  db.prepare('DELETE FROM registered_groups WHERE jid = ?').run(jid);
+}
+
 // --- JSON migration ---
 
 function migrateJsonState(): void {

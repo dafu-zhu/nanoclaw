@@ -1,6 +1,6 @@
 # NanoClaw — Multi-Agent Personal System
 
-Fork of qwibitai/nanoclaw. 23-agent system organized by Genshin Impact character relationship groups.
+Fork of qwibitai/nanoclaw. 3-agent system: Andy (main), Raiden (work), Arlecchino (life manager).
 Upstream: `git remote add upstream https://github.com/qwibitai/nanoclaw.git` — use `/update-nanoclaw` to pull fixes.
 
 ## Architecture
@@ -21,20 +21,7 @@ Single Node.js process. Channels (Telegram/WhatsApp/Slack/Discord/Gmail) self-re
 | `container/agent-runner/src/index.ts` | Runs inside container, Claude Agent SDK interface |
 | `container/agent-runner/src/ipc-mcp-stdio.ts` | MCP tools (send_message, schedule_task, register_group, etc.) |
 | `groups/{name}/CLAUDE.md` | Per-agent personality and memory |
-| `groups/global/identities/*.md` | Shared identity templates (ta, research-lead, research-member) |
 | `container/skills/*/SKILL.md` | Agent skills — synced to `.claude/skills/` at container startup |
-
-## Agent Identities
-
-Shared behavior templates in `groups/global/identities/`. Agents reference an identity via `<!-- identity: type -->` in their CLAUDE.md. The identity file provides common behavior; the agent's CLAUDE.md provides overrides (marked with `<!-- override: section -->`). **Agent CLAUDE.md always wins on conflict.**
-
-| Identity | File | Agents |
-|----------|------|--------|
-| `ta` | `ta.md` | Diluc, Tighnari, Navia, Xiao |
-| `research-lead` | `research-lead.md` | Arlecchino, Keqing |
-| `research-member` | `research-member.md` | Columbina, Capitano, Pantalone, Tartaglia, Sandrone, Yanfei, Xingqiu, Ningguang, Hu Tao, Ganyu |
-
-Solo agents (Skirk, Nahida, Zhongli, Raiden, Alhaitham, Lisa, Cyno) have no shared identity — each is unique.
 
 ## Skills
 
@@ -73,25 +60,11 @@ Container buildkit caches aggressively. `--no-cache` alone won't invalidate COPY
 
 ## Owner
 
-UChicago MSFM grad student. Working part-time, job searching quant/tech. Has not learned TypeScript — Claude Code handles all TS. Research: LLM agents for alpha mining, derivatives pricing.
-
-## Weekly Schedule (Spring 2026, starts March 23)
-
-| Day | Time | Course | Room | TA |
-|-----|------|--------|------|----|
-| Mon | 3:00–5:50 PM | FINM 32000 Numerical Methods | Kersten 106 | Diluc |
-| Tue | 11:00 AM–12:20 PM | STAT 31511 Monte Carlo Simulation | Harper 130 | Tighnari |
-| Tue | 12:30–1:50 PM | FINM 34700 Multivariate Stats | Eckhart 133 | Navia |
-| Thu | 11:00 AM–12:20 PM | STAT 31511 Monte Carlo Simulation | Harper 130 | Tighnari |
-| Thu | 12:30–1:50 PM | FINM 34700 Multivariate Stats | Eckhart 133 | Navia |
-| Fri | 4:30–7:20 PM | FINM 32700 Advanced Computing | MS112 | Xiao |
+UChicago MSFM grad student. Working part-time at 7Chord (quant research & dev). Has not learned TypeScript — Claude Code handles all TS. Research: LLM agents for alpha mining, derivatives pricing.
 
 ## Reference Docs (read only when needed)
 
 | Doc | Contents |
 |-----|----------|
-| `docs/agent-roster.md` | Full agent roster, research teams, character registry rules |
 | `docs/tech-debt.md` | TD-001 through TD-008: implemented features and pending work |
 | `docs/setup-checklist.md` | Deployment phases, configuration notes |
-| `docs/quarter-transition.md` | Alhaitham's quarter transition procedure |
-| `docs/templates-reference.md` | Template placeholders for agent CLAUDE.md creation |
